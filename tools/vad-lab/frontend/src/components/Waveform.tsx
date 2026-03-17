@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 
 interface WaveformProps {
   samples: number[];
@@ -7,8 +7,12 @@ interface WaveformProps {
   className?: string;
 }
 
+const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32];
+
 export function Waveform({ samples, width = 800, height = 150, className }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [zoomIndex, setZoomIndex] = useState(0);
+  const zoom = ZOOM_LEVELS[zoomIndex];
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,14 +48,29 @@ export function Waveform({ samples, width = 800, height = 150, className }: Wave
         if (val > max) max = val;
       }
 
-      const yMin = mid + min * mid;
-      const yMax = mid + max * mid;
+      // Apply vertical zoom and clamp to canvas bounds
+      const yMin = Math.max(0, mid + min * mid * zoom);
+      const yMax = Math.min(height, mid + max * mid * zoom);
 
       ctx.moveTo(x, yMin);
       ctx.lineTo(x, yMax);
     }
 
     ctx.stroke();
+
+    // Clipping indicator: draw red lines at top/bottom when signal is clipped
+    if (zoom > 1) {
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, 0.5);
+      ctx.lineTo(width, 0.5);
+      ctx.moveTo(0, height - 0.5);
+      ctx.lineTo(width, height - 0.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Center line
     ctx.strokeStyle = "#e5e7eb";
@@ -60,13 +79,32 @@ export function Waveform({ samples, width = 800, height = 150, className }: Wave
     ctx.moveTo(0, mid);
     ctx.lineTo(width, mid);
     ctx.stroke();
-  }, [samples, width, height]);
+  }, [samples, width, height, zoom]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width, height }}
-      className={className}
-    />
+    <div>
+      <div className="flex items-center gap-2 mb-1">
+        <button
+          className="px-2 py-0.5 text-xs border rounded hover:bg-muted disabled:opacity-30"
+          disabled={zoomIndex <= 0}
+          onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
+        >
+          −
+        </button>
+        <span className="text-xs text-muted-foreground w-10 text-center">{zoom}x</span>
+        <button
+          className="px-2 py-0.5 text-xs border rounded hover:bg-muted disabled:opacity-30"
+          disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
+          onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
+        >
+          +
+        </button>
+      </div>
+      <canvas
+        ref={canvasRef}
+        style={{ width, height }}
+        className={className}
+      />
+    </div>
   );
 }

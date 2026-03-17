@@ -15,7 +15,6 @@ pub enum ClientMessage {
     ListBackends,
     StartRecording {
         device_index: usize,
-        sample_rate: u32,
     },
     StopRecording,
     LoadFile {
@@ -102,19 +101,19 @@ pub async fn handle_ws(socket: WebSocket) {
                 configs = new_configs;
             }
 
-            ClientMessage::StartRecording {
-                device_index,
-                sample_rate,
-            } => {
+            ClientMessage::StartRecording { device_index } => {
                 // Stop any existing capture
                 if let Some(tx) = stop_tx.take() {
                     let _ = tx.send(());
                 }
 
-                match audio_source::start_capture(device_index, sample_rate, frame_duration_ms) {
+                match audio_source::start_capture(device_index, frame_duration_ms) {
                     Ok(capture) => {
+                        let sample_rate = capture.sample_rate;
                         stop_tx = Some(capture.stop);
                         let audio_tx = capture.tx;
+
+                        tracing::info!(sample_rate, "capture started");
 
                         // Start the pipeline
                         let pipeline_rx = audio_tx.subscribe();

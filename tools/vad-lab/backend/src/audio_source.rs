@@ -44,18 +44,22 @@ pub struct CaptureResult {
     pub tx: broadcast::Sender<AudioFrame>,
     /// Send `()` to stop the capture.
     pub stop: tokio::sync::oneshot::Sender<()>,
+    /// Actual sample rate of the captured audio.
+    pub sample_rate: u32,
 }
 
 /// Start capturing audio from a device.
+///
+/// Uses the device's default input config (native sample rate and channels),
+/// then downmixes to mono. Returns the actual sample rate in `CaptureResult`.
 /// The capture runs on a dedicated thread (cpal::Stream is !Send on macOS).
 pub fn start_capture(
     device_index: usize,
-    sample_rate: u32,
     frame_duration_ms: u32,
 ) -> Result<CaptureResult, String> {
     let (tx, rx) = broadcast::channel::<AudioFrame>(256);
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
 
     let tx_clone = tx.clone();
 
@@ -76,11 +80,28 @@ pub fn start_capture(
             }
         };
 
+        let default_config = match device.default_input_config() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = ready_tx.send(Err(format!("failed to get default config: {e}")));
+                return;
+            }
+        };
+
+        let sample_rate = default_config.sample_rate().0;
+        let channels = default_config.channels() as usize;
+
         let config = cpal::StreamConfig {
-            channels: 1,
+            channels: channels as u16,
             sample_rate: cpal::SampleRate(sample_rate),
             buffer_size: cpal::BufferSize::Default,
         };
+
+        tracing::info!(
+            sample_rate,
+            channels,
+            "capturing with device default config"
+        );
 
         let samples_per_frame = (sample_rate as usize * frame_duration_ms as usize) / 1000;
         let sr = sample_rate as f64;
@@ -90,8 +111,10 @@ pub fn start_capture(
         let stream = match device.build_input_stream(
             &config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                for &sample in data {
-                    let sample_i16 = (sample * i16::MAX as f32) as i16;
+                // Downmix to mono: average all channels per sample
+                for chunk in data.chunks(channels) {
+                    let mono: f32 = chunk.iter().sum::<f32>() / channels as f32;
+                    let sample_i16 = (mono * i16::MAX as f32) as i16;
                     buffer.push(sample_i16);
 
                     if buffer.len() >= samples_per_frame {
@@ -123,7 +146,7 @@ pub fn start_capture(
             return;
         }
 
-        let _ = ready_tx.send(Ok(()));
+        let _ = ready_tx.send(Ok(sample_rate));
 
         // Block until stop signal, keeping stream alive
         let _ = stop_rx.blocking_recv();
@@ -132,10 +155,11 @@ pub fn start_capture(
 
     // Wait for the stream to be ready
     match ready_rx.recv() {
-        Ok(Ok(())) => Ok(CaptureResult {
+        Ok(Ok(sample_rate)) => Ok(CaptureResult {
             rx,
             tx,
             stop: stop_tx,
+            sample_rate,
         }),
         Ok(Err(e)) => Err(e),
         Err(_) => Err("capture thread exited unexpectedly".into()),

@@ -11,19 +11,23 @@ import { Separator } from "@/components/ui/separator";
 import { Waveform } from "@/components/Waveform";
 import { VadTimeline } from "@/components/VadTimeline";
 import { ConfigPanel } from "@/components/ConfigPanel";
+import { LogPanel } from "@/components/LogPanel";
 import {
   VadLabSocket,
   type AudioDevice,
   type VadConfig,
   type ParamInfo,
   type ServerMessage,
+  type ConnectionState,
+  type LogEntry,
 } from "@/lib/websocket";
 
 const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+const MAX_LOG_ENTRIES = 500;
 
 function App() {
   const socketRef = useRef<VadLabSocket | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
   const [selectedDevice, setSelectedDevice] = useState<string>("");
@@ -34,6 +38,22 @@ function App() {
     Record<string, Array<{ timestamp_ms: number; probability: number }>>
   >({});
   const [totalDurationMs, setTotalDurationMs] = useState(0);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsOpen, setLogsOpen] = useState(true);
+
+  const connected = connectionState === "connected";
+
+  const addLog = useCallback((entry: LogEntry) => {
+    setLogs((prev) => {
+      const next = [...prev, entry];
+      return next.length > MAX_LOG_ENTRIES ? next.slice(-MAX_LOG_ENTRIES) : next;
+    });
+  }, []);
+
+  const fetchInitialData = useCallback((socket: VadLabSocket) => {
+    socket.send({ type: "list_devices" });
+    socket.send({ type: "list_backends" });
+  }, []);
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
@@ -68,7 +88,6 @@ function App() {
         break;
 
       case "error":
-        console.error("Server error:", msg.message);
         break;
     }
   }, []);
@@ -77,24 +96,30 @@ function App() {
     const socket = new VadLabSocket();
     socketRef.current = socket;
 
-    socket
-      .connect()
-      .then(() => {
-        setConnected(true);
-        socket.send({ type: "list_devices" });
-        socket.send({ type: "list_backends" });
-      })
-      .catch((err) => {
-        console.error("Connection failed:", err);
-      });
+    const unsubMsg = socket.onMessage(handleMessage);
+    const unsubLog = socket.onLog(addLog);
 
-    const unsub = socket.onMessage(handleMessage);
+    const unsubConn = socket.onConnection((state) => {
+      setConnectionState(state);
+      if (state === "connected") {
+        fetchInitialData(socket);
+      }
+      if (state === "reconnecting") {
+        setRecording(false);
+      }
+    });
+
+    socket.connect().catch(() => {
+      // reconnect is handled internally
+    });
 
     return () => {
-      unsub();
+      unsubMsg();
+      unsubConn();
+      unsubLog();
       socket.disconnect();
     };
-  }, [handleMessage]);
+  }, [handleMessage, addLog, fetchInitialData]);
 
   const startRecording = () => {
     const socket = socketRef.current;
@@ -108,7 +133,6 @@ function App() {
     socket.send({
       type: "start_recording",
       device_index: parseInt(selectedDevice),
-      sample_rate: 16000,
     });
     setRecording(true);
   };
@@ -121,12 +145,19 @@ function App() {
     setRecording(false);
   };
 
+  const connectionColor: Record<ConnectionState, string> = {
+    connected: "text-green-500",
+    connecting: "text-yellow-500",
+    reconnecting: "text-yellow-500",
+    disconnected: "text-red-500",
+  };
+
   return (
     <div className="min-h-screen bg-background p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">vad-lab</h1>
-        <span className={`text-xs ${connected ? "text-green-500" : "text-red-500"}`}>
-          {connected ? "connected" : "disconnected"}
+        <span className={`text-xs ${connectionColor[connectionState]}`}>
+          {connectionState}
         </span>
       </div>
 
@@ -136,7 +167,9 @@ function App() {
       <div className="flex items-center gap-3 flex-wrap">
         <Select value={selectedDevice} onValueChange={(v) => { if (v) setSelectedDevice(v); }}>
           <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select microphone" />
+            <SelectValue placeholder="Select microphone">
+              {devices.find((d) => String(d.index) === selectedDevice)?.name}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {devices.map((d) => (
@@ -183,6 +216,30 @@ function App() {
 
       {/* Config Panel */}
       <ConfigPanel configs={configs} backends={backends} onConfigsChange={setConfigs} />
+
+      <Separator />
+
+      {/* Logs */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium">Logs</h3>
+          <div className="flex gap-2">
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setLogs([])}
+            >
+              Clear
+            </button>
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setLogsOpen((v) => !v)}
+            >
+              {logsOpen ? "Hide" : "Show"}
+            </button>
+          </div>
+        </div>
+        {logsOpen && <LogPanel logs={logs} maxHeight={240} />}
+      </div>
     </div>
   );
 }

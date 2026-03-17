@@ -76,13 +76,18 @@ fn create_detector(
         "webrtc" => {
             use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
 
-            let mode = config
+            let mode_str = config
                 .params
                 .get("mode")
                 .and_then(|v| v.as_str())
-                .unwrap_or("quality");
+                .unwrap_or("0 - quality");
 
-            let mode = match mode {
+            // Strip "N - " prefix if present (e.g. "2 - aggressive" -> "aggressive")
+            let mode_key = mode_str
+                .split_once(" - ")
+                .map_or(mode_str, |(_, name)| name);
+
+            let mode = match mode_key {
                 "quality" => WebRtcVadMode::Quality,
                 "low_bitrate" => WebRtcVadMode::LowBitrate,
                 "aggressive" => WebRtcVadMode::Aggressive,
@@ -108,12 +113,12 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
             name: "mode".to_string(),
             description: "Aggressiveness mode".to_string(),
             param_type: ParamType::Select(vec![
-                "quality".to_string(),
-                "low_bitrate".to_string(),
-                "aggressive".to_string(),
-                "very_aggressive".to_string(),
+                "0 - quality".to_string(),
+                "1 - low_bitrate".to_string(),
+                "2 - aggressive".to_string(),
+                "3 - very_aggressive".to_string(),
             ]),
-            default: serde_json::json!("quality"),
+            default: serde_json::json!("0 - quality"),
         }],
     );
 

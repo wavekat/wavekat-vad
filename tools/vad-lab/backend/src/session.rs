@@ -78,7 +78,7 @@ mod tests {
             id: "webrtc-1".into(),
             label: "WebRTC Quality".into(),
             backend: "webrtc".into(),
-            params: HashMap::from([("mode".into(), serde_json::json!("quality"))]),
+            params: HashMap::from([("mode".into(), serde_json::json!("0 - quality"))]),
         });
         session.results.insert(
             "webrtc-1".into(),

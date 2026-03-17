@@ -35,7 +35,7 @@ export function LogPanel({ logs, maxHeight = 200 }: LogPanelProps) {
         {logs.length === 0 && (
           <div className="text-zinc-600">No logs yet</div>
         )}
-        {logs.map((entry, i) => (
+        {[...logs].reverse().map((entry, i) => (
           <div key={i} className="flex gap-2 leading-5">
             <span className="text-zinc-600 shrink-0">
               {formatTime(entry.timestamp)}

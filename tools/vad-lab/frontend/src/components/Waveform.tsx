@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 interface WaveformProps {
   samples: number[];
@@ -84,21 +85,23 @@ export function Waveform({ samples, width = 800, height = 150, className }: Wave
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
-        <button
-          className="px-2 py-0.5 text-xs border rounded hover:bg-muted disabled:opacity-30"
+        <Button
+          variant="outline"
+          size="xs"
           disabled={zoomIndex <= 0}
           onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
         >
           −
-        </button>
+        </Button>
         <span className="text-xs text-muted-foreground w-10 text-center">{zoom}x</span>
-        <button
-          className="px-2 py-0.5 text-xs border rounded hover:bg-muted disabled:opacity-30"
+        <Button
+          variant="outline"
+          size="xs"
           disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
           onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
         >
           +
-        </button>
+        </Button>
       </div>
       <canvas
         ref={canvasRef}

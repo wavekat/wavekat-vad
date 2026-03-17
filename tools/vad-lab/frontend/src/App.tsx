@@ -224,18 +224,12 @@ function App() {
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-medium">Logs</h3>
           <div className="flex gap-2">
-            <button
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setLogs([])}
-            >
+            <Button variant="ghost" size="xs" onClick={() => setLogs([])}>
               Clear
-            </button>
-            <button
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setLogsOpen((v) => !v)}
-            >
+            </Button>
+            <Button variant="ghost" size="xs" onClick={() => setLogsOpen((v) => !v)}>
               {logsOpen ? "Hide" : "Show"}
-            </button>
+            </Button>
           </div>
         </div>
         {logsOpen && <LogPanel logs={logs} maxHeight={240} />}

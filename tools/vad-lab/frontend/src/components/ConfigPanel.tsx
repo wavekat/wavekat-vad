@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -92,8 +93,8 @@ export function ConfigPanel({ configs, backends, onConfigsChange }: ConfigPanelP
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">
-                  <input
-                    className="bg-transparent border-none outline-none w-full text-sm font-semibold"
+                  <Input
+                    className="bg-transparent border-none shadow-none outline-none h-auto p-0 text-sm font-semibold"
                     value={config.label}
                     onChange={(e) => updateConfig(config.id, { label: e.target.value })}
                   />

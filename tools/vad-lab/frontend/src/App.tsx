@@ -59,9 +59,11 @@ function App() {
     switch (msg.type) {
       case "devices":
         setDevices(msg.devices);
-        if (msg.devices.length > 0) {
-          setSelectedDevice(String(msg.devices[0].index));
-        }
+        setSelectedDevice((prev) => {
+          const stillExists = msg.devices.some((d) => String(d.index) === prev);
+          if (stillExists) return prev;
+          return msg.devices.length > 0 ? String(msg.devices[0].index) : "";
+        });
         break;
 
       case "backends":
@@ -179,6 +181,14 @@ function App() {
             ))}
           </SelectContent>
         </Select>
+
+        <Button
+          variant="outline"
+          disabled={!connected}
+          onClick={() => socketRef.current?.send({ type: "list_devices" })}
+        >
+          Refresh
+        </Button>
 
         {!recording ? (
           <Button onClick={startRecording} disabled={!connected || configs.length === 0}>

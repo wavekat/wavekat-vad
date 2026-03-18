@@ -36,8 +36,10 @@ Dev tool for live VAD experimentation. Captures audio server-side and streams re
   <em>vad-lab web interface</em>
 </p>
 
+### Quick Start
+
 ```sh
-make setup      # Install dependencies (once)
+make setup         # Install dependencies (once)
 make dev-backend   # Terminal 1
 make dev-frontend  # Terminal 2
 ```

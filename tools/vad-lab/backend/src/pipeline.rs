@@ -73,7 +73,7 @@ fn create_detector(
     sample_rate: u32,
 ) -> Result<Box<dyn VoiceActivityDetector>, String> {
     match config.backend.as_str() {
-        "webrtc" => {
+        "webrtc-vad" => {
             use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
 
             let mode_str = config
@@ -108,7 +108,7 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
     let mut backends = HashMap::new();
 
     backends.insert(
-        "webrtc".to_string(),
+        "webrtc-vad".to_string(),
         vec![ParamInfo {
             name: "mode".to_string(),
             description: "Aggressiveness mode".to_string(),

@@ -215,7 +215,10 @@ function App() {
   return (
     <div className="min-h-screen bg-background p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">vad-lab</h1>
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl font-bold">vad-lab</h1>
+          <span className="text-xs text-muted-foreground">by WaveKat</span>
+        </div>
         <span className={`text-xs ${connectionColor[connectionState]}`}>
           {connectionState}
         </span>
@@ -282,15 +285,7 @@ function App() {
 
       {/* Waveform and VAD Timelines */}
       <div ref={waveformContainerRef} className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Waveform</h3>
-          <ZoomControls
-            viewport={viewport}
-            totalDurationMs={totalDurationMs}
-            onViewportChange={setViewport}
-            disabled={recording}
-          />
-        </div>
+        <h3 className="text-sm font-medium">Waveform</h3>
         <Waveform
           samples={samples}
           totalDurationMs={totalDurationMs}
@@ -306,9 +301,20 @@ function App() {
           recording={recording}
           playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
           onSeek={playback.seek}
+          rightControls={
+            <ZoomControls
+              viewport={viewport}
+              totalDurationMs={totalDurationMs}
+              onViewportChange={setViewport}
+              disabled={recording}
+            />
+          }
         />
 
         {/* VAD Timelines */}
+        {configs.length > 0 && (
+          <h3 className="text-sm font-medium pt-2">VAD Results</h3>
+        )}
         {configs.map((config, i) => (
           <VadTimeline
             key={config.id}

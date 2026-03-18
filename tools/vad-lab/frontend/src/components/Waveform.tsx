@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   type Viewport,
@@ -27,6 +27,8 @@ interface WaveformProps {
   playheadMs?: number | null;
   /** Called when user clicks to seek */
   onSeek?: (timeMs: number) => void;
+  /** Additional controls to render on the right side of the controls row */
+  rightControls?: ReactNode;
 }
 
 const VERTICAL_ZOOM_LEVELS = [1, 2, 4, 8, 16, 32];
@@ -54,6 +56,7 @@ export function Waveform({
   recording = false,
   playheadMs,
   onSeek,
+  rightControls,
 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -389,9 +392,10 @@ export function Waveform({
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-1">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Amplitude:</span>
+      <div className="flex items-center justify-between gap-4 mb-1">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Amplitude:</span>
           <Button
             variant="outline"
             size="xs"
@@ -415,36 +419,38 @@ export function Waveform({
           >
             +
           </Button>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">Scale:</span>
-          <div className="inline-flex rounded-md border border-input">
-            <Button
-              variant="ghost"
-              size="xs"
-              className={`rounded-none rounded-l-md border-0 ${
-                scaleMode === "linear"
-                  ? "bg-accent text-accent-foreground"
-                  : ""
-              }`}
-              onClick={() => setScaleMode("linear")}
-            >
-              Linear
-            </Button>
-            <Button
-              variant="ghost"
-              size="xs"
-              className={`rounded-none rounded-r-md border-0 border-l border-input ${
-                scaleMode === "log"
-                  ? "bg-accent text-accent-foreground"
-                  : ""
-              }`}
-              onClick={() => setScaleMode("log")}
-            >
-              Log
-            </Button>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">Scale:</span>
+            <div className="inline-flex rounded-md border border-input">
+              <Button
+                variant="ghost"
+                size="xs"
+                className={`rounded-none rounded-l-md border-0 ${
+                  scaleMode === "linear"
+                    ? "bg-accent text-accent-foreground"
+                    : ""
+                }`}
+                onClick={() => setScaleMode("linear")}
+              >
+                Linear
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                className={`rounded-none rounded-r-md border-0 border-l border-input ${
+                  scaleMode === "log"
+                    ? "bg-accent text-accent-foreground"
+                    : ""
+                }`}
+                onClick={() => setScaleMode("log")}
+              >
+                Log
+              </Button>
+            </div>
           </div>
         </div>
+        {rightControls}
       </div>
       <div
         ref={containerRef}

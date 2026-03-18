@@ -1,19 +1,46 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 
 interface WaveformProps {
   samples: number[];
+  totalDurationMs: number;
   width?: number;
   height?: number;
   className?: string;
+  hoverTimeMs?: number | null;
+  onHoverTimeChange?: (timeMs: number | null) => void;
 }
 
 const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32];
 
-export function Waveform({ samples, width = 800, height = 150, className }: WaveformProps) {
+export function Waveform({
+  samples,
+  totalDurationMs,
+  width = 800,
+  height = 150,
+  className,
+  hoverTimeMs,
+  onHoverTimeChange,
+}: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [zoomIndex, setZoomIndex] = useState(0);
   const zoom = ZOOM_LEVELS[zoomIndex];
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onHoverTimeChange || totalDurationMs <= 0) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const timeMs = (x / width) * totalDurationMs;
+      onHoverTimeChange(Math.max(0, Math.min(totalDurationMs, timeMs)));
+    },
+    [onHoverTimeChange, totalDurationMs, width]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    onHoverTimeChange?.(null);
+  }, [onHoverTimeChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,7 +107,28 @@ export function Waveform({ samples, width = 800, height = 150, className }: Wave
     ctx.moveTo(0, mid);
     ctx.lineTo(width, mid);
     ctx.stroke();
-  }, [samples, width, height, zoom]);
+
+    // Draw crosshair
+    if (hoverTimeMs != null && totalDurationMs > 0) {
+      const x = (hoverTimeMs / totalDurationMs) * width;
+
+      // Vertical line
+      ctx.strokeStyle = "#f97316";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+
+      // Time label
+      const timeStr = (hoverTimeMs / 1000).toFixed(3) + "s";
+      ctx.font = "11px monospace";
+      ctx.fillStyle = "#f97316";
+      const textWidth = ctx.measureText(timeStr).width;
+      const labelX = x + 4 > width - textWidth - 4 ? x - textWidth - 4 : x + 4;
+      ctx.fillText(timeStr, labelX, 12);
+    }
+  }, [samples, width, height, zoom, hoverTimeMs, totalDurationMs]);
 
   return (
     <div>
@@ -103,11 +151,18 @@ export function Waveform({ samples, width = 800, height = 150, className }: Wave
           +
         </Button>
       </div>
-      <canvas
-        ref={canvasRef}
-        style={{ width, height }}
-        className={className}
-      />
+      <div
+        ref={containerRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{ width, height, cursor: "crosshair" }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{ width, height }}
+          className={className}
+        />
+      </div>
     </div>
   );
 }

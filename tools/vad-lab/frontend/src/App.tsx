@@ -40,6 +40,7 @@ function App() {
   const [totalDurationMs, setTotalDurationMs] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsOpen, setLogsOpen] = useState(true);
+  const [hoverTimeMs, setHoverTimeMs] = useState<number | null>(null);
 
   const connected = connectionState === "connected";
 
@@ -206,7 +207,15 @@ function App() {
       {/* Waveform */}
       <div>
         <h3 className="text-sm font-medium mb-2">Waveform</h3>
-        <Waveform samples={samples} width={800} height={120} className="border rounded" />
+        <Waveform
+          samples={samples}
+          totalDurationMs={totalDurationMs}
+          width={800}
+          height={120}
+          className="border rounded"
+          hoverTimeMs={hoverTimeMs}
+          onHoverTimeChange={setHoverTimeMs}
+        />
       </div>
 
       {/* VAD Timelines */}
@@ -219,6 +228,8 @@ function App() {
           width={800}
           height={32}
           color={COLORS[i % COLORS.length]}
+          hoverTimeMs={hoverTimeMs}
+          onHoverTimeChange={setHoverTimeMs}
         />
       ))}
 

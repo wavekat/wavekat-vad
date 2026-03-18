@@ -1,4 +1,28 @@
-.PHONY: dev dev-frontend dev-backend check test fmt lint
+.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint
+
+help:
+	@echo "Available targets:"
+	@echo "  setup           Install all dependencies (run once after clone)"
+	@echo "  setup-backend   Install cargo-watch"
+	@echo "  setup-frontend  Install npm dependencies"
+	@echo "  dev-backend     Run vad-lab backend with auto-rebuild"
+	@echo "  dev-frontend    Run vad-lab frontend dev server"
+	@echo "  dev             Instructions for running both"
+	@echo "  check           Check workspace compiles"
+	@echo "  test            Run all tests"
+	@echo "  fmt             Format code"
+	@echo "  lint            Run clippy with warnings as errors"
+
+# Install all dependencies
+setup: setup-backend setup-frontend
+
+# Install cargo-watch for auto-rebuild
+setup-backend:
+	cargo install cargo-watch
+
+# Install frontend npm dependencies
+setup-frontend:
+	cd tools/vad-lab/frontend && . "$$NVM_DIR/nvm.sh" && nvm use && npm install
 
 # Run vad-lab backend with auto-rebuild on file changes
 dev-backend:

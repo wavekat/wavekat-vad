@@ -10,6 +10,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Waveform } from "@/components/Waveform";
 import { VadTimeline } from "@/components/VadTimeline";
+import { FrequencySpectrum } from "@/components/FrequencySpectrum";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { LogPanel } from "@/components/LogPanel";
 import { ZoomControls } from "@/components/ZoomControls";
@@ -44,6 +45,9 @@ function App() {
   const [recording, setRecording] = useState(false);
   const [configs, setConfigs] = useState<VadConfig[]>([]);
   const [samples, setSamples] = useState<number[]>([]);
+  const [spectrumData, setSpectrumData] = useState<
+    Array<{ timestamp_ms: number; magnitudes: number[] }>
+  >([]);
   const [vadResults, setVadResults] = useState<
     Record<string, Array<{ timestamp_ms: number; probability: number }>>
   >({});
@@ -53,6 +57,7 @@ function App() {
   const [logsOpen, setLogsOpen] = useState(true);
   const [hoverTimeMs, setHoverTimeMs] = useState<number | null>(null);
   const [viewport, setViewport] = useState<Viewport>(createDefaultViewport);
+  const [spectrumBins, setSpectrumBins] = useState(64);
 
   const connected = connectionState === "connected";
 
@@ -123,6 +128,13 @@ function App() {
         break;
       }
 
+      case "spectrum":
+        setSpectrumData((prev) => [
+          ...prev,
+          { timestamp_ms: msg.timestamp_ms, magnitudes: msg.magnitudes },
+        ]);
+        break;
+
       case "vad":
         setVadResults((prev) => ({
           ...prev,
@@ -178,6 +190,7 @@ function App() {
     if (!socket || !connected) return;
 
     setSamples([]);
+    setSpectrumData([]);
     setVadResults({});
     setTotalDurationMs(0);
     setSampleRate(null);
@@ -204,6 +217,11 @@ function App() {
     recordingRef.current = false;
     setRecording(false);
   };
+
+  const handleSpectrumBinsChange = useCallback((bins: number) => {
+    setSpectrumBins(bins);
+    socketRef.current?.send({ type: "set_spectrum_bins", bins });
+  }, []);
 
   const connectionColor: Record<ConnectionState, string> = {
     connected: "text-green-500",
@@ -309,6 +327,24 @@ function App() {
               disabled={recording}
             />
           }
+        />
+
+        {/* Spectrogram */}
+        <h3 className="text-sm font-medium pt-2">Spectrogram</h3>
+        <FrequencySpectrum
+          spectrumData={spectrumData}
+          sampleRate={sampleRate ?? 48000}
+          totalDurationMs={totalDurationMs}
+          viewport={viewport}
+          onViewportChange={setViewport}
+          width={containerWidth}
+          height={120}
+          className="border rounded"
+          hoverTimeMs={hoverTimeMs}
+          onHoverTimeChange={setHoverTimeMs}
+          recording={recording}
+          bins={spectrumBins}
+          onBinsChange={handleSpectrumBinsChange}
         />
 
         {/* VAD Timelines */}

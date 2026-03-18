@@ -21,8 +21,9 @@ export interface ParamInfo {
 export type ServerMessage =
   | { type: "devices"; devices: AudioDevice[] }
   | { type: "backends"; backends: Record<string, ParamInfo[]> }
-  | { type: "recording_started"; sample_rate: number }
+  | { type: "recording_started"; sample_rate: number; spectrum_bins: number }
   | { type: "audio"; timestamp_ms: number; samples: number[] }
+  | { type: "spectrum"; timestamp_ms: number; magnitudes: number[] }
   | { type: "vad"; config_id: string; timestamp_ms: number; probability: number }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -34,7 +35,8 @@ export type ClientMessage =
   | { type: "start_recording"; device_index: number }
   | { type: "stop_recording" }
   | { type: "load_file"; path: string }
-  | { type: "set_configs"; configs: VadConfig[] };
+  | { type: "set_configs"; configs: VadConfig[] }
+  | { type: "set_spectrum_bins"; bins: number };
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
@@ -58,6 +60,7 @@ interface StreamBatch {
   audioFrames: number;
   audioMinMs: number;
   audioMaxMs: number;
+  spectrumFrames: number;
   vad: Map<string, { count: number; minP: number; maxP: number; sumP: number }>;
 }
 
@@ -200,7 +203,7 @@ export class VadLabSocket {
   }
 
   private logServerMessage(msg: ServerMessage) {
-    if (msg.type === "audio" || msg.type === "vad") {
+    if (msg.type === "audio" || msg.type === "vad" || msg.type === "spectrum") {
       this.addToBatch(msg);
     } else {
       // Flush any pending batch before logging a non-streaming message
@@ -209,12 +212,13 @@ export class VadLabSocket {
     }
   }
 
-  private addToBatch(msg: ServerMessage & { type: "audio" | "vad" }) {
+  private addToBatch(msg: ServerMessage & { type: "audio" | "vad" | "spectrum" }) {
     if (!this.streamBatch) {
       this.streamBatch = {
         audioFrames: 0,
         audioMinMs: Infinity,
         audioMaxMs: -Infinity,
+        spectrumFrames: 0,
         vad: new Map(),
       };
       this.startBatchTimer();
@@ -225,6 +229,8 @@ export class VadLabSocket {
       batch.audioFrames++;
       batch.audioMinMs = Math.min(batch.audioMinMs, msg.timestamp_ms);
       batch.audioMaxMs = Math.max(batch.audioMaxMs, msg.timestamp_ms);
+    } else if (msg.type === "spectrum") {
+      batch.spectrumFrames++;
     } else {
       const existing = batch.vad.get(msg.config_id);
       if (existing) {
@@ -272,6 +278,10 @@ export class VadLabSocket {
       );
     }
 
+    if (batch.spectrumFrames > 0) {
+      parts.push(`spectrum: ${batch.spectrumFrames} frames`);
+    }
+
     for (const [configId, stats] of batch.vad) {
       const avg = stats.sumP / stats.count;
       if (stats.minP === stats.maxP) {
@@ -293,8 +303,9 @@ function summarizeServer(msg: ServerMessage): string {
   switch (msg.type) {
     case "devices": return `devices (${msg.devices.length})`;
     case "backends": return `backends (${Object.keys(msg.backends).length})`;
-    case "recording_started": return `recording_started (${msg.sample_rate} Hz)`;
+    case "recording_started": return `recording_started (${msg.sample_rate} Hz, ${msg.spectrum_bins} bins)`;
     case "audio": return `audio t=${msg.timestamp_ms.toFixed(0)}ms`;
+    case "spectrum": return `spectrum t=${msg.timestamp_ms.toFixed(0)}ms`;
     case "vad": return `vad [${msg.config_id}] t=${msg.timestamp_ms.toFixed(0)}ms p=${msg.probability.toFixed(2)}`;
     case "done": return "done";
     case "error": return `error: ${msg.message}`;
@@ -309,5 +320,6 @@ function summarizeClient(msg: ClientMessage): string {
     case "stop_recording": return "stop_recording";
     case "load_file": return `load_file (${msg.path})`;
     case "set_configs": return `set_configs (${msg.configs.length})`;
+    case "set_spectrum_bins": return `set_spectrum_bins (${msg.bins})`;
   }
 }

@@ -1,6 +1,7 @@
 mod audio_source;
 mod pipeline;
 mod session;
+mod spectrum;
 mod ws;
 
 use axum::{

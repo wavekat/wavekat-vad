@@ -21,6 +21,7 @@ export interface ParamInfo {
 export type ServerMessage =
   | { type: "devices"; devices: AudioDevice[] }
   | { type: "backends"; backends: Record<string, ParamInfo[]> }
+  | { type: "recording_started"; sample_rate: number }
   | { type: "audio"; timestamp_ms: number; samples: number[] }
   | { type: "vad"; config_id: string; timestamp_ms: number; probability: number }
   | { type: "done" }
@@ -292,6 +293,7 @@ function summarizeServer(msg: ServerMessage): string {
   switch (msg.type) {
     case "devices": return `devices (${msg.devices.length})`;
     case "backends": return `backends (${Object.keys(msg.backends).length})`;
+    case "recording_started": return `recording_started (${msg.sample_rate} Hz)`;
     case "audio": return `audio t=${msg.timestamp_ms.toFixed(0)}ms`;
     case "vad": return `vad [${msg.config_id}] t=${msg.timestamp_ms.toFixed(0)}ms p=${msg.probability.toFixed(2)}`;
     case "done": return "done";

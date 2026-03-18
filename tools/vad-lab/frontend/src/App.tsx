@@ -12,6 +12,12 @@ import { Waveform } from "@/components/Waveform";
 import { VadTimeline } from "@/components/VadTimeline";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { LogPanel } from "@/components/LogPanel";
+import { ZoomControls } from "@/components/ZoomControls";
+import {
+  type Viewport,
+  createDefaultViewport,
+  calculateViewDuration,
+} from "@/lib/viewport";
 import {
   VadLabSocket,
   type AudioDevice,
@@ -27,6 +33,9 @@ const MAX_LOG_ENTRIES = 500;
 
 function App() {
   const socketRef = useRef<VadLabSocket | null>(null);
+  const waveformContainerRef = useRef<HTMLDivElement>(null);
+  const recordingRef = useRef(false);
+  const [containerWidth, setContainerWidth] = useState(800);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
@@ -38,9 +47,11 @@ function App() {
     Record<string, Array<{ timestamp_ms: number; probability: number }>>
   >({});
   const [totalDurationMs, setTotalDurationMs] = useState(0);
+  const [sampleRate, setSampleRate] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsOpen, setLogsOpen] = useState(true);
   const [hoverTimeMs, setHoverTimeMs] = useState<number | null>(null);
+  const [viewport, setViewport] = useState<Viewport>(createDefaultViewport);
 
   const connected = connectionState === "connected";
 
@@ -49,6 +60,21 @@ function App() {
       const next = [...prev, entry];
       return next.length > MAX_LOG_ENTRIES ? next.slice(-MAX_LOG_ENTRIES) : next;
     });
+  }, []);
+
+  // Responsive width measurement
+  useEffect(() => {
+    const container = waveformContainerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width && width > 0) {
+        setContainerWidth(width);
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
   }, []);
 
   const fetchInitialData = useCallback((socket: VadLabSocket) => {
@@ -71,10 +97,24 @@ function App() {
         setBackends(msg.backends);
         break;
 
-      case "audio":
-        setSamples((prev) => [...prev, ...msg.samples]);
-        setTotalDurationMs(msg.timestamp_ms + 20);
+      case "recording_started":
+        setSampleRate(msg.sample_rate);
         break;
+
+      case "audio": {
+        setSamples((prev) => [...prev, ...msg.samples]);
+        const newEndMs = msg.timestamp_ms + 20;
+        setTotalDurationMs(newEndMs);
+
+        // Update viewport during recording so it's set correctly when recording stops
+        if (recordingRef.current) {
+          setViewport((prev) => ({
+            ...prev,
+            viewStartMs: Math.max(0, newEndMs - prev.viewDurationMs),
+          }));
+        }
+        break;
+      }
 
       case "vad":
         setVadResults((prev) => ({
@@ -87,6 +127,7 @@ function App() {
         break;
 
       case "done":
+        recordingRef.current = false;
         setRecording(false);
         break;
 
@@ -108,6 +149,7 @@ function App() {
         fetchInitialData(socket);
       }
       if (state === "reconnecting") {
+        recordingRef.current = false;
         setRecording(false);
       }
     });
@@ -131,12 +173,19 @@ function App() {
     setSamples([]);
     setVadResults({});
     setTotalDurationMs(0);
+    setSampleRate(null);
+    // Calculate viewport duration based on container width for consistent scroll speed
+    setViewport({
+      viewStartMs: 0,
+      viewDurationMs: calculateViewDuration(containerWidth),
+    });
 
     socket.send({ type: "set_configs", configs });
     socket.send({
       type: "start_recording",
       device_index: parseInt(selectedDevice),
     });
+    recordingRef.current = true;
     setRecording(true);
   };
 
@@ -145,6 +194,7 @@ function App() {
     if (!socket) return;
 
     socket.send({ type: "stop_recording" });
+    recordingRef.current = false;
     setRecording(false);
   };
 
@@ -204,34 +254,49 @@ function App() {
 
       <Separator />
 
-      {/* Waveform */}
-      <div>
-        <h3 className="text-sm font-medium mb-2">Waveform</h3>
+      {/* Waveform and VAD Timelines */}
+      <div ref={waveformContainerRef} className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Waveform</h3>
+          <ZoomControls
+            viewport={viewport}
+            totalDurationMs={totalDurationMs}
+            onViewportChange={setViewport}
+            disabled={recording}
+          />
+        </div>
         <Waveform
           samples={samples}
           totalDurationMs={totalDurationMs}
-          width={800}
+          sampleRate={sampleRate}
+          viewport={viewport}
+          onViewportChange={setViewport}
+          width={containerWidth}
           height={120}
           className="border rounded"
           hoverTimeMs={hoverTimeMs}
           onHoverTimeChange={setHoverTimeMs}
+          interactionEnabled={!recording}
+          recording={recording}
         />
-      </div>
 
-      {/* VAD Timelines */}
-      {configs.map((config, i) => (
-        <VadTimeline
-          key={config.id}
-          label={config.label}
-          results={vadResults[config.id] ?? []}
-          totalDurationMs={totalDurationMs}
-          width={800}
-          height={32}
-          color={COLORS[i % COLORS.length]}
-          hoverTimeMs={hoverTimeMs}
-          onHoverTimeChange={setHoverTimeMs}
-        />
-      ))}
+        {/* VAD Timelines */}
+        {configs.map((config, i) => (
+          <VadTimeline
+            key={config.id}
+            label={config.label}
+            results={vadResults[config.id] ?? []}
+            totalDurationMs={totalDurationMs}
+            viewport={viewport}
+            width={containerWidth}
+            height={32}
+            color={COLORS[i % COLORS.length]}
+            hoverTimeMs={hoverTimeMs}
+            onHoverTimeChange={setHoverTimeMs}
+            recording={recording}
+          />
+        ))}
+      </div>
 
       <Separator />
 

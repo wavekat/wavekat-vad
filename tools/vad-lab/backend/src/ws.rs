@@ -35,6 +35,9 @@ pub enum ServerMessage {
     Backends {
         backends: std::collections::HashMap<String, Vec<pipeline::ParamInfo>>,
     },
+    RecordingStarted {
+        sample_rate: u32,
+    },
     Audio {
         timestamp_ms: f64,
         samples: Vec<i16>,
@@ -114,6 +117,11 @@ pub async fn handle_ws(socket: WebSocket) {
                         let audio_tx = capture.tx;
 
                         tracing::info!(sample_rate, "capture started");
+
+                        // Notify client of sample rate
+                        let _ = ws_tx
+                            .send(send_msg(&ServerMessage::RecordingStarted { sample_rate }))
+                            .await;
 
                         // Start the pipeline
                         let pipeline_rx = audio_tx.subscribe();

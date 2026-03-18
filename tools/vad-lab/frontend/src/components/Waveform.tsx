@@ -23,6 +23,10 @@ interface WaveformProps {
   interactionEnabled?: boolean;
   /** When true, "now" is anchored to right edge */
   recording?: boolean;
+  /** Current playhead position in milliseconds (for playback) */
+  playheadMs?: number | null;
+  /** Called when user clicks to seek */
+  onSeek?: (timeMs: number) => void;
 }
 
 const VERTICAL_ZOOM_LEVELS = [1, 2, 4, 8, 16, 32];
@@ -48,6 +52,8 @@ export function Waveform({
   onHoverTimeChange,
   interactionEnabled = true,
   recording = false,
+  playheadMs,
+  onSeek,
 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +70,7 @@ export function Waveform({
     verticalZoom: number;
     scaleMode: "linear" | "log";
     hoverTimeMs: number | null;
+    playheadMs: number | null;
   } | null>(null);
 
   // During recording, anchor "now" to the right edge
@@ -77,6 +84,7 @@ export function Waveform({
   // Drag state
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; viewStartMs: number } | null>(null);
+  const clickThreshold = 3; // pixels - if mouse moves less than this, it's a click
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -119,10 +127,24 @@ export function Waveform({
     [interactionEnabled, viewport.viewStartMs]
   );
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-    dragStartRef.current = null;
-  }, []);
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (dragStartRef.current && onSeek && interactionEnabled) {
+        const deltaX = Math.abs(e.clientX - dragStartRef.current.x);
+        // If mouse didn't move much, treat as a click to seek
+        if (deltaX < clickThreshold) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const timeMs = pixelToTime(x, width, effectiveViewport);
+          const clampedTime = Math.max(0, Math.min(totalDurationMs, timeMs));
+          onSeek(clampedTime);
+        }
+      }
+      setIsDragging(false);
+      dragStartRef.current = null;
+    },
+    [onSeek, interactionEnabled, width, effectiveViewport, totalDurationMs]
+  );
 
   const handleMouseLeave = useCallback(() => {
     onHoverTimeChange?.(null);
@@ -281,7 +303,31 @@ export function Waveform({
         ctx.fillText(timeStr, labelX, 12);
       }
     }
-  }, [samples, width, height, verticalZoom, hoverTimeMs, totalDurationMs, effectiveViewport, sampleRate, scaleMode]);
+
+    // Draw playhead
+    if (playheadMs != null && totalDurationMs > 0) {
+      const x = timeToPixel(playheadMs, width, effectiveViewport);
+
+      if (x >= 0 && x <= width) {
+        // Playhead line (bright blue)
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+
+        // Playhead triangle at top
+        ctx.fillStyle = "#3b82f6";
+        ctx.beginPath();
+        ctx.moveTo(x - 6, 0);
+        ctx.lineTo(x + 6, 0);
+        ctx.lineTo(x, 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }, [samples, width, height, verticalZoom, hoverTimeMs, playheadMs, totalDurationMs, effectiveViewport, sampleRate, scaleMode]);
 
   // Throttled render with requestAnimationFrame
   useEffect(() => {
@@ -293,6 +339,7 @@ export function Waveform({
       verticalZoom,
       scaleMode,
       hoverTimeMs: hoverTimeMs ?? null,
+      playheadMs: playheadMs ?? null,
     };
 
     const lastRender = lastRenderRef.current;
@@ -303,7 +350,8 @@ export function Waveform({
       lastRender.viewDurationMs === currentState.viewDurationMs &&
       lastRender.verticalZoom === currentState.verticalZoom &&
       lastRender.scaleMode === currentState.scaleMode &&
-      lastRender.hoverTimeMs === currentState.hoverTimeMs
+      lastRender.hoverTimeMs === currentState.hoverTimeMs &&
+      lastRender.playheadMs === currentState.playheadMs
     ) {
       return; // Skip if nothing changed
     }
@@ -326,7 +374,7 @@ export function Waveform({
         rafIdRef.current = null;
       }
     };
-  }, [samples.length, effectiveViewport.viewStartMs, effectiveViewport.viewDurationMs, verticalZoom, scaleMode, hoverTimeMs, render]);
+  }, [samples.length, effectiveViewport.viewStartMs, effectiveViewport.viewDurationMs, verticalZoom, scaleMode, hoverTimeMs, playheadMs, render]);
 
   // Force re-render when width/height/sampleRate changes
   useEffect(() => {

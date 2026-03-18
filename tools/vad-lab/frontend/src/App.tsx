@@ -18,6 +18,7 @@ import {
   createDefaultViewport,
   calculateViewDuration,
 } from "@/lib/viewport";
+import { useAudioPlayback } from "@/lib/useAudioPlayback";
 import {
   VadLabSocket,
   type AudioDevice,
@@ -54,6 +55,12 @@ function App() {
   const [viewport, setViewport] = useState<Viewport>(createDefaultViewport);
 
   const connected = connectionState === "connected";
+
+  // Audio playback
+  const playback = useAudioPlayback({
+    samples,
+    sampleRate,
+  });
 
   const addLog = useCallback((entry: LogEntry) => {
     setLogs((prev) => {
@@ -250,6 +257,25 @@ function App() {
             Stop
           </Button>
         )}
+
+        {/* Playback controls */}
+        {!recording && playback.canPlay && (
+          <>
+            <div className="w-px h-6 bg-border" />
+            {!playback.state.isPlaying ? (
+              <Button variant="outline" onClick={playback.play}>
+                ▶ Play
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={playback.pause}>
+                ⏸ Pause
+              </Button>
+            )}
+            <Button variant="ghost" onClick={playback.stop} disabled={playback.state.positionMs === 0}>
+              ⏹ Stop
+            </Button>
+          </>
+        )}
       </div>
 
       <Separator />
@@ -278,6 +304,8 @@ function App() {
           onHoverTimeChange={setHoverTimeMs}
           interactionEnabled={!recording}
           recording={recording}
+          playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
+          onSeek={playback.seek}
         />
 
         {/* VAD Timelines */}

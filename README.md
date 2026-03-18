@@ -30,6 +30,8 @@ wavekat-vad = { version = "0.1", features = ["silero"] }
 
 Dev tool for live VAD experimentation. Captures audio server-side and streams results to a web UI.
 
+![vad-lab screenshot](docs/images/vad-lab-screenshot.png)
+
 ```sh
 make setup      # Install dependencies (once)
 make dev-backend   # Terminal 1

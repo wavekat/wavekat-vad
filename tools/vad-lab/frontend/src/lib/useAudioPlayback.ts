@@ -97,9 +97,10 @@ export function useAudioPlayback({
     const duration = durationMsRef.current;
 
     if (positionMs >= duration) {
-      // Playback finished
-      setState({ isPlaying: false, positionMs: duration });
-      onPositionChangeRef.current?.(duration);
+      // Playback finished - reset to beginning
+      startOffsetRef.current = 0;
+      setState({ isPlaying: false, positionMs: 0 });
+      onPositionChangeRef.current?.(0);
       sourceNodeRef.current = null;
       return;
     }
@@ -151,8 +152,10 @@ export function useAudioPlayback({
     // Handle natural end of playback
     source.onended = () => {
       if (sourceNodeRef.current === source) {
-        setState({ isPlaying: false, positionMs: durationMs });
-        onPositionChange?.(durationMs);
+        // Reset to beginning when playback ends naturally
+        startOffsetRef.current = 0;
+        setState({ isPlaying: false, positionMs: 0 });
+        onPositionChange?.(0);
         sourceNodeRef.current = null;
         if (rafIdRef.current) {
           cancelAnimationFrame(rafIdRef.current);
@@ -160,7 +163,7 @@ export function useAudioPlayback({
         }
       }
     };
-  }, [canPlay, state.positionMs, durationMs, updatePosition, onPositionChange]);
+  }, [canPlay, state.positionMs, updatePosition, onPositionChange]);
 
   const pause = useCallback(() => {
     if (sourceNodeRef.current) {
@@ -222,8 +225,10 @@ export function useAudioPlayback({
 
         source.onended = () => {
           if (sourceNodeRef.current === source) {
-            setState({ isPlaying: false, positionMs: durationMs });
-            onPositionChange?.(durationMs);
+            // Reset to beginning when playback ends naturally
+            startOffsetRef.current = 0;
+            setState({ isPlaying: false, positionMs: 0 });
+            onPositionChange?.(0);
             sourceNodeRef.current = null;
             if (rafIdRef.current) {
               cancelAnimationFrame(rafIdRef.current);

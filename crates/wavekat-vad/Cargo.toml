@@ -1,0 +1,24 @@
+[package]
+name = "wavekat-vad"
+version = "0.1.0"
+edition = "2021"
+description = "Unified voice activity detection with multiple backends"
+license = "MIT"
+
+[features]
+default = ["webrtc"]
+webrtc = ["dep:webrtc-vad"]
+silero = ["dep:ort"]
+
+[dependencies]
+thiserror = { workspace = true }
+webrtc-vad = { version = "0.4", optional = true }
+ort = { version = "2.0.0-rc.12", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+hound = { workspace = true }
+
+[[bench]]
+name = "vad_comparison"
+harness = false

@@ -152,6 +152,12 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
             param_type: ParamType::Select(vec!["off".to_string(), "on".to_string()]),
             default: serde_json::json!("off"),
         },
+        ParamInfo {
+            name: "normalize_dbfs".to_string(),
+            description: "Normalize to target level (dBFS)".to_string(),
+            param_type: ParamType::Float { min: -40.0, max: 0.0 },
+            default: serde_json::json!(null),
+        },
     ]
 }
 

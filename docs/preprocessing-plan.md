@@ -228,10 +228,11 @@ Keep the crate lightweight by default. Users opt in to heavier preprocessing.
 - [x] Enable in vad-lab (uses 48kHz for denoise compatibility)
 - [ ] Test with vad-lab: compare raw vs. denoised VAD results side-by-side
 
-### Phase 5: Normalizer (Optional)
-- [ ] Implement RMS-based normalizer
-- [ ] Add to `Preprocessor` chain
-- [ ] Test with varying input levels
+### Phase 5: Normalizer
+- [x] Implement RMS-based normalizer with soft peak limiting
+- [x] Add to `Preprocessor` chain
+- [x] Add to vad-lab UI (toggle + target dBFS input)
+- [x] Test with varying input levels
 
 ### Phase 6: Resampler (Optional)
 - [ ] Add `rubato` dependency behind `resample` feature flag

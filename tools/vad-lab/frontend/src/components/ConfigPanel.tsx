@@ -266,6 +266,45 @@ export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsC
                       Noise suppression (RNNoise)
                     </Label>
                   </div>
+
+                  {/* Normalization */}
+                  <div className="space-y-2 mt-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`normalize-${config.id}`}
+                        checked={config.preprocessing?.normalize_dbfs != null}
+                        onChange={(e) => {
+                          updatePreprocessing(config.id, {
+                            normalize_dbfs: e.target.checked ? -20 : null,
+                          });
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <Label htmlFor={`normalize-${config.id}`} className="text-xs cursor-pointer">
+                        Normalize level
+                      </Label>
+                    </div>
+                    {config.preprocessing?.normalize_dbfs != null && (
+                      <div className="flex items-center gap-2 ml-6">
+                        <Input
+                          type="number"
+                          min={-40}
+                          max={0}
+                          step={1}
+                          value={config.preprocessing.normalize_dbfs}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val)) {
+                              updatePreprocessing(config.id, { normalize_dbfs: val });
+                            }
+                          }}
+                          className="h-7 text-xs w-20"
+                        />
+                        <span className="text-xs text-muted-foreground">dBFS</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

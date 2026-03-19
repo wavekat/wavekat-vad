@@ -20,11 +20,13 @@
 //! ```
 
 mod biquad;
+mod normalize;
 
 #[cfg(feature = "denoise")]
 mod denoise;
 
 pub use biquad::BiquadFilter;
+pub use normalize::Normalizer;
 
 #[cfg(feature = "denoise")]
 pub use denoise::{Denoiser, DENOISE_SAMPLE_RATE};
@@ -67,7 +69,7 @@ impl PreprocessorConfig {
 
     /// Preset for raw microphone input.
     ///
-    /// Enables high-pass filter at 80Hz to remove room rumble.
+    /// Enables high-pass filter at 80Hz and normalization to -20 dBFS.
     /// With `denoise` feature, also enables noise suppression.
     pub fn raw_mic() -> Self {
         Self {
@@ -76,7 +78,7 @@ impl PreprocessorConfig {
             denoise: true,
             #[cfg(not(feature = "denoise"))]
             denoise: false,
-            normalize_dbfs: None,
+            normalize_dbfs: Some(-20.0),
         }
     }
 
@@ -105,11 +107,12 @@ impl PreprocessorConfig {
 ///
 /// 1. High-pass filter (removes low-frequency noise)
 /// 2. Noise suppression (RNNoise, requires 48kHz)
-/// 3. Normalization (not yet implemented)
+/// 3. Normalization (RMS-based amplitude adjustment)
 pub struct Preprocessor {
     high_pass: Option<BiquadFilter>,
     #[cfg(feature = "denoise")]
     denoiser: Option<Denoiser>,
+    normalizer: Option<Normalizer>,
     sample_rate: u32,
     enabled: bool,
 }
@@ -120,6 +123,7 @@ impl std::fmt::Debug for Preprocessor {
         s.field("high_pass", &self.high_pass.is_some());
         #[cfg(feature = "denoise")]
         s.field("denoiser", &self.denoiser.is_some());
+        s.field("normalizer", &self.normalizer.is_some());
         s.field("sample_rate", &self.sample_rate);
         s.field("enabled", &self.enabled);
         s.finish()
@@ -152,17 +156,20 @@ impl Preprocessor {
             None
         };
 
+        let normalizer = config.normalize_dbfs.map(Normalizer::new);
+
         #[cfg(feature = "denoise")]
         let denoise_enabled = denoiser.is_some();
         #[cfg(not(feature = "denoise"))]
         let denoise_enabled = false;
 
-        let enabled = high_pass.is_some() || denoise_enabled || config.normalize_dbfs.is_some();
+        let enabled = high_pass.is_some() || denoise_enabled || normalizer.is_some();
 
         Self {
             high_pass,
             #[cfg(feature = "denoise")]
             denoiser,
+            normalizer,
             sample_rate,
             enabled,
         }
@@ -182,6 +189,11 @@ impl Preprocessor {
     #[cfg(feature = "denoise")]
     pub fn is_denoising(&self) -> bool {
         self.denoiser.is_some()
+    }
+
+    /// Returns true if normalization is active.
+    pub fn is_normalizing(&self) -> bool {
+        self.normalizer.is_some()
     }
 
     /// Process audio samples and return the preprocessed result.
@@ -206,7 +218,10 @@ impl Preprocessor {
             output = denoiser.process(&output);
         }
 
-        // Stage 3: Normalization (TODO)
+        // Stage 3: Normalization
+        if let Some(ref mut normalizer) = self.normalizer {
+            output = normalizer.process(&output);
+        }
 
         output
     }
@@ -221,6 +236,9 @@ impl Preprocessor {
         #[cfg(feature = "denoise")]
         if let Some(ref mut denoiser) = self.denoiser {
             denoiser.reset();
+        }
+        if let Some(ref mut normalizer) = self.normalizer {
+            normalizer.reset();
         }
     }
 }
@@ -246,6 +264,7 @@ mod tests {
         let raw_mic = PreprocessorConfig::raw_mic();
         assert!(raw_mic.is_enabled());
         assert_eq!(raw_mic.high_pass_hz, Some(80.0));
+        assert_eq!(raw_mic.normalize_dbfs, Some(-20.0));
 
         let telephony = PreprocessorConfig::telephony();
         assert!(telephony.is_enabled());
@@ -303,6 +322,34 @@ mod tests {
         // After settling, output should be near zero
         let last_avg: i32 = output[400..].iter().map(|&s| s.abs() as i32).sum::<i32>() / 100;
         assert!(last_avg < 500, "DC should be attenuated, got avg: {last_avg}");
+    }
+
+    #[test]
+    fn test_preprocessor_normalize() {
+        let config = PreprocessorConfig {
+            normalize_dbfs: Some(-20.0),
+            ..Default::default()
+        };
+        let mut preprocessor = Preprocessor::new(&config, 16000);
+
+        assert!(preprocessor.is_enabled());
+        assert!(preprocessor.is_normalizing());
+
+        // Quiet signal should be amplified
+        let quiet: Vec<i16> = vec![100; 320];
+        let output = preprocessor.process(&quiet);
+
+        let input_rms: f64 = (quiet.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()
+            / quiet.len() as f64)
+            .sqrt();
+        let output_rms: f64 = (output.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()
+            / output.len() as f64)
+            .sqrt();
+
+        assert!(
+            output_rms > input_rms,
+            "Quiet signal should be amplified: {output_rms} > {input_rms}"
+        );
     }
 
     #[test]

@@ -58,42 +58,56 @@ function freqToLogPosition(freq: number, minFreq: number, maxFreq: number): numb
   return Math.log(freq / minFreq) / Math.log(maxFreq / minFreq);
 }
 
-/** Map dB value (-80 to 0) to RGB color components */
-function dbToRgb(db: number): [number, number, number] {
-  // Normalize to 0-1
-  const normalized = (db + 80) / 80;
+/** Map dB value to RGB color components with configurable range
+ * Uses Audacity-like colormap: dark blue -> blue -> cyan -> green -> yellow -> orange -> red -> white
+ */
+function dbToRgb(db: number, minDb: number, maxDb: number): [number, number, number] {
+  // Normalize to 0-1 based on the dB range
+  const range = maxDb - minDb;
+  const normalized = (db - minDb) / range;
   const clamped = Math.max(0, Math.min(1, normalized));
 
-  // Inferno-like colormap: black -> purple -> orange -> yellow -> white
-  // This matches Audacity's default colormap better
-  if (clamped < 0.25) {
-    const t = clamped / 0.25;
-    return [
-      Math.round(t * 80),
-      Math.round(t * 20),
-      Math.round(t * 100),
-    ];
-  } else if (clamped < 0.5) {
-    const t = (clamped - 0.25) / 0.25;
-    return [
-      Math.round(80 + t * 120),
-      Math.round(20 + t * 30),
-      Math.round(100 - t * 50),
-    ];
-  } else if (clamped < 0.75) {
-    const t = (clamped - 0.5) / 0.25;
-    return [
-      Math.round(200 + t * 55),
-      Math.round(50 + t * 150),
-      Math.round(50 - t * 50),
-    ];
+  // Apply slight gamma curve for better perceptual distribution
+  const t = Math.pow(clamped, 0.85);
+
+  // Audacity-style colormap with more color variation
+  // 0.0: dark blue/black (silence)
+  // 0.15: deep blue
+  // 0.3: blue-cyan
+  // 0.45: cyan-green
+  // 0.6: green-yellow
+  // 0.75: yellow-orange
+  // 0.9: orange-red
+  // 1.0: white (loud)
+
+  if (t < 0.1) {
+    // Black to dark blue
+    const s = t / 0.1;
+    return [0, 0, Math.round(30 + s * 60)];
+  } else if (t < 0.25) {
+    // Dark blue to blue
+    const s = (t - 0.1) / 0.15;
+    return [0, Math.round(s * 50), Math.round(90 + s * 120)];
+  } else if (t < 0.4) {
+    // Blue to cyan
+    const s = (t - 0.25) / 0.15;
+    return [0, Math.round(50 + s * 155), Math.round(210 - s * 10)];
+  } else if (t < 0.55) {
+    // Cyan to green
+    const s = (t - 0.4) / 0.15;
+    return [Math.round(s * 50), Math.round(205 - s * 30), Math.round(200 - s * 150)];
+  } else if (t < 0.7) {
+    // Green to yellow
+    const s = (t - 0.55) / 0.15;
+    return [Math.round(50 + s * 205), Math.round(175 + s * 80), Math.round(50 - s * 50)];
+  } else if (t < 0.85) {
+    // Yellow to orange/red
+    const s = (t - 0.7) / 0.15;
+    return [255, Math.round(255 - s * 120), 0];
   } else {
-    const t = (clamped - 0.75) / 0.25;
-    return [
-      255,
-      Math.round(200 + t * 55),
-      Math.round(t * 200),
-    ];
+    // Red to white
+    const s = (t - 0.85) / 0.15;
+    return [255, Math.round(135 + s * 120), Math.round(s * 255)];
   }
 }
 
@@ -103,6 +117,14 @@ function logPositionToFreq(pos: number, minFreq: number, maxFreq: number): numbe
 }
 
 const BINS_OPTIONS = [32, 64, 128, 256, 512];
+// Gain options - higher gain makes quiet sounds more visible
+// by compressing the dB range (loud sounds clip to bright)
+const GAIN_OPTIONS = [
+  { label: "0dB", minDb: -80, maxDb: 0 },    // Full range, no boost
+  { label: "+10dB", minDb: -70, maxDb: -10 }, // Slight boost
+  { label: "+20dB", minDb: -60, maxDb: -20 }, // Moderate boost - good default
+  { label: "+30dB", minDb: -50, maxDb: -30 }, // High boost, see noise clearly
+];
 
 export function FrequencySpectrum({
   spectrumData,
@@ -122,6 +144,7 @@ export function FrequencySpectrum({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [freqScale, setFreqScale] = useState<FreqScale>("log");
+  const [gain, setGain] = useState(2); // Index into GAIN_OPTIONS (default +20dB for better detail)
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; viewStartMs: number } | null>(null);
 
@@ -139,6 +162,9 @@ export function FrequencySpectrum({
       }
     : viewport;
 
+  // Get current dB range from gain
+  const { minDb, maxDb } = GAIN_OPTIONS[gain];
+
   // Refs for throttled rendering
   const rafIdRef = useRef<number | null>(null);
   const lastRenderRef = useRef<{
@@ -146,6 +172,7 @@ export function FrequencySpectrum({
     viewStartMs: number;
     viewDurationMs: number;
     freqScale: FreqScale;
+    gain: number;
     hoverTimeMs: number | null;
   } | null>(null);
 
@@ -183,24 +210,59 @@ export function FrequencySpectrum({
     const imageData = ctx.createImageData(width, height);
     const pixels = imageData.data;
 
-    // For each pixel, sample the spectrum with interpolation
+    // Helper to get magnitude from frame with frequency interpolation
+    const getMagnitude = (frame: SpectrumFrame, freq: number): number => {
+      const binFloat = freq / freqPerBin;
+      const binLow = Math.floor(binFloat);
+      const binHigh = Math.ceil(binFloat);
+      const binFrac = binFloat - binLow;
+
+      if (binLow < 0 || binHigh >= frame.magnitudes.length) {
+        return -80;
+      } else if (binLow === binHigh) {
+        return frame.magnitudes[binLow];
+      } else {
+        const dbLow = frame.magnitudes[binLow];
+        const dbHigh = frame.magnitudes[binHigh];
+        return dbLow + (dbHigh - dbLow) * binFrac;
+      }
+    };
+
+    // For each pixel, sample the spectrum with bilinear interpolation
     for (let px = 0; px < width; px++) {
       // Map pixel X to time
       const timeMs = pixelToTime(px, width, effectiveViewport);
 
-      // Find the closest frame(s) for interpolation
-      let frameIdx = 0;
+      // Find the two closest frames for time interpolation
+      let frameIdxLow = -1;
+      let frameIdxHigh = -1;
       for (let i = 0; i < sortedFrames.length; i++) {
         if (sortedFrames[i].timestamp_ms <= timeMs) {
-          frameIdx = i;
-        } else {
+          frameIdxLow = i;
+        }
+        if (sortedFrames[i].timestamp_ms >= timeMs && frameIdxHigh === -1) {
+          frameIdxHigh = i;
           break;
         }
       }
 
-      // Get the frame (or interpolate between two)
-      const frame = sortedFrames[frameIdx];
-      if (!frame) continue;
+      // Handle edge cases
+      if (frameIdxLow === -1 && frameIdxHigh === -1) continue;
+      if (frameIdxLow === -1) frameIdxLow = frameIdxHigh;
+      if (frameIdxHigh === -1) frameIdxHigh = frameIdxLow;
+
+      const frameLow = sortedFrames[frameIdxLow];
+      const frameHigh = sortedFrames[frameIdxHigh];
+      if (!frameLow || !frameHigh) continue;
+
+      // Calculate time interpolation factor
+      let timeFrac = 0;
+      if (frameIdxLow !== frameIdxHigh) {
+        const timeDiff = frameHigh.timestamp_ms - frameLow.timestamp_ms;
+        if (timeDiff > 0) {
+          timeFrac = (timeMs - frameLow.timestamp_ms) / timeDiff;
+        }
+      }
 
       for (let py = 0; py < height; py++) {
         // Map pixel Y to frequency (Y is inverted: 0 = top = high freq)
@@ -213,26 +275,20 @@ export function FrequencySpectrum({
           freq = yNorm * maxFreq;
         }
 
-        // Map frequency to bin index with interpolation
-        const binFloat = freq / freqPerBin;
-        const binLow = Math.floor(binFloat);
-        const binHigh = Math.ceil(binFloat);
-        const binFrac = binFloat - binLow;
-
-        // Get magnitude with linear interpolation between bins
+        // Get magnitude with bilinear interpolation (time + frequency)
         let db: number;
-        if (binLow < 0 || binHigh >= frame.magnitudes.length) {
-          db = -80;
-        } else if (binLow === binHigh) {
-          db = frame.magnitudes[binLow];
+        if (frameIdxLow === frameIdxHigh) {
+          // No time interpolation needed
+          db = getMagnitude(frameLow, freq);
         } else {
-          const dbLow = frame.magnitudes[binLow];
-          const dbHigh = frame.magnitudes[binHigh];
-          db = dbLow + (dbHigh - dbLow) * binFrac;
+          // Interpolate between two frames
+          const dbLow = getMagnitude(frameLow, freq);
+          const dbHigh = getMagnitude(frameHigh, freq);
+          db = dbLow + (dbHigh - dbLow) * timeFrac;
         }
 
         // Convert to color and set pixel
-        const [r, g, b] = dbToRgb(db);
+        const [r, g, b] = dbToRgb(db, minDb, maxDb);
         const idx = (py * width + px) * 4;
         pixels[idx] = r;
         pixels[idx + 1] = g;
@@ -300,6 +356,8 @@ export function FrequencySpectrum({
     height,
     effectiveViewport,
     freqScale,
+    minDb,
+    maxDb,
     hoverTimeMs,
     totalDurationMs,
     minFreq,
@@ -314,6 +372,7 @@ export function FrequencySpectrum({
       viewStartMs: effectiveViewport.viewStartMs,
       viewDurationMs: effectiveViewport.viewDurationMs,
       freqScale,
+      gain,
       hoverTimeMs: hoverTimeMs ?? null,
     };
 
@@ -323,6 +382,7 @@ export function FrequencySpectrum({
       lastRender.dataLength === currentState.dataLength &&
       lastRender.viewStartMs === currentState.viewStartMs &&
       lastRender.viewDurationMs === currentState.viewDurationMs &&
+      lastRender.gain === currentState.gain &&
       lastRender.freqScale === currentState.freqScale &&
       lastRender.hoverTimeMs === currentState.hoverTimeMs
     ) {
@@ -350,6 +410,7 @@ export function FrequencySpectrum({
     effectiveViewport.viewStartMs,
     effectiveViewport.viewDurationMs,
     freqScale,
+    gain,
     hoverTimeMs,
     render,
   ]);
@@ -479,6 +540,28 @@ export function FrequencySpectrum({
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">Gain:</span>
+          <div className="inline-flex rounded-md border border-input">
+            {GAIN_OPTIONS.map((opt, idx) => (
+              <Button
+                key={opt.label}
+                variant="ghost"
+                size="xs"
+                className={`border-0 ${
+                  idx === 0 ? "rounded-l-md" : ""
+                } ${
+                  idx === GAIN_OPTIONS.length - 1 ? "rounded-r-md" : "border-r border-input"
+                } ${
+                  gain === idx ? "bg-accent text-accent-foreground" : ""
+                }`}
+                onClick={() => setGain(idx)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
         </div>
         <span className="text-xs text-muted-foreground">
           {(maxFreq / 1000).toFixed(1)}kHz max

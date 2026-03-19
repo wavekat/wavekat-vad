@@ -246,10 +246,10 @@ export function FrequencySpectrum({
         }
       }
 
-      // Handle edge cases
+      // Handle edge cases: skip pixels outside the data range
       if (frameIdxLow === -1 && frameIdxHigh === -1) continue;
       if (frameIdxLow === -1) frameIdxLow = frameIdxHigh;
-      if (frameIdxHigh === -1) frameIdxHigh = frameIdxLow;
+      if (frameIdxHigh === -1) continue;
 
       const frameLow = sortedFrames[frameIdxLow];
       const frameHigh = sortedFrames[frameIdxHigh];

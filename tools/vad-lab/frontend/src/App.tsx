@@ -34,6 +34,11 @@ const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"
 const MAX_LOG_ENTRIES = 500;
 const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
 
+interface SpectrumFrame {
+  timestamp_ms: number;
+  magnitudes: number[];
+}
+
 function App() {
   const socketRef = useRef<VadLabSocket | null>(null);
   const waveformContainerRef = useRef<HTMLDivElement>(null);
@@ -42,13 +47,12 @@ function App() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
+  const [preprocessingParams, setPreprocessingParams] = useState<ParamInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [recording, setRecording] = useState(false);
   const [configs, setConfigs] = useState<VadConfig[]>([]);
   const [samples, setSamples] = useState<number[]>([]);
-  const [spectrumData, setSpectrumData] = useState<
-    Array<{ timestamp_ms: number; magnitudes: number[] }>
-  >([]);
+  const [spectrumData, setSpectrumData] = useState<SpectrumFrame[]>([]);
   const [vadResults, setVadResults] = useState<
     Record<string, Array<{ timestamp_ms: number; probability: number }>>
   >({});
@@ -59,6 +63,14 @@ function App() {
   const [hoverTimeMs, setHoverTimeMs] = useState<number | null>(null);
   const [viewport, setViewport] = useState<Viewport>(createDefaultViewport);
   const [spectrumBins, setSpectrumBins] = useState(256);
+
+  // Preprocessed data per config
+  const [preprocessedSamples, setPreprocessedSamples] = useState<Record<string, number[]>>({});
+  const [preprocessedSpectrumData, setPreprocessedSpectrumData] = useState<
+    Record<string, SpectrumFrame[]>
+  >({});
+  // Which configs should display their preprocessed waveform/spectrum
+  const [showPreprocessed, setShowPreprocessed] = useState<Record<string, boolean>>({});
 
   const connected = connectionState === "connected";
 
@@ -108,6 +120,7 @@ function App() {
 
       case "backends":
         setBackends(msg.backends);
+        setPreprocessingParams(msg.preprocessing_params);
         break;
 
       case "recording_started":
@@ -142,6 +155,23 @@ function App() {
           [msg.config_id]: [
             ...(prev[msg.config_id] ?? []),
             { timestamp_ms: msg.timestamp_ms, probability: msg.probability },
+          ],
+        }));
+        break;
+
+      case "preprocessed_audio":
+        setPreprocessedSamples((prev) => ({
+          ...prev,
+          [msg.config_id]: [...(prev[msg.config_id] ?? []), ...msg.samples],
+        }));
+        break;
+
+      case "preprocessed_spectrum":
+        setPreprocessedSpectrumData((prev) => ({
+          ...prev,
+          [msg.config_id]: [
+            ...(prev[msg.config_id] ?? []),
+            { timestamp_ms: msg.timestamp_ms, magnitudes: msg.magnitudes },
           ],
         }));
         break;
@@ -193,6 +223,8 @@ function App() {
     setSamples([]);
     setSpectrumData([]);
     setVadResults({});
+    setPreprocessedSamples({});
+    setPreprocessedSpectrumData({});
     setTotalDurationMs(0);
     setSampleRate(null);
     // Calculate viewport duration based on container width for consistent scroll speed
@@ -370,12 +402,88 @@ function App() {
             playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
           />
         ))}
+
+        {/* Preprocessed Waveforms/Spectrograms/VAD - only for configs with showPreprocessed enabled */}
+        {configs.filter((c) => showPreprocessed[c.id]).map((config) => {
+          const configIndex = configs.findIndex((c) => c.id === config.id);
+          const color = COLORS[configIndex % COLORS.length];
+          const configSamples = preprocessedSamples[config.id] ?? [];
+          const configSpectrum = preprocessedSpectrumData[config.id] ?? [];
+
+          return (
+            <div key={`preprocessed-${config.id}`} className="space-y-2 pt-4 border-t">
+              <div className="flex items-center gap-2 pt-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                <h3 className="text-sm font-medium">
+                  Preprocessed: {config.label}
+                </h3>
+              </div>
+              <Waveform
+                samples={configSamples}
+                totalDurationMs={totalDurationMs}
+                sampleRate={sampleRate}
+                viewport={viewport}
+                onViewportChange={setViewport}
+                width={containerWidth}
+                height={80}
+                className="border rounded"
+                hoverTimeMs={hoverTimeMs}
+                onHoverTimeChange={setHoverTimeMs}
+                interactionEnabled={!recording}
+                recording={recording}
+                playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
+                onSeek={playback.seek}
+              />
+              <FrequencySpectrum
+                spectrumData={configSpectrum}
+                sampleRate={sampleRate ?? 48000}
+                totalDurationMs={totalDurationMs}
+                viewport={viewport}
+                onViewportChange={setViewport}
+                width={containerWidth}
+                height={80}
+                className="border rounded"
+                hoverTimeMs={hoverTimeMs}
+                onHoverTimeChange={setHoverTimeMs}
+                recording={recording}
+                bins={spectrumBins}
+                onBinsChange={handleSpectrumBinsChange}
+                playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
+              />
+              <VadTimeline
+                label={config.label}
+                results={vadResults[config.id] ?? []}
+                totalDurationMs={totalDurationMs}
+                viewport={viewport}
+                width={containerWidth}
+                height={32}
+                color={color}
+                hoverTimeMs={hoverTimeMs}
+                onHoverTimeChange={setHoverTimeMs}
+                recording={recording}
+                playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
+              />
+            </div>
+          );
+        })}
       </div>
 
       <Separator />
 
       {/* Config Panel */}
-      <ConfigPanel configs={configs} backends={backends} onConfigsChange={setConfigs} />
+      <ConfigPanel
+        configs={configs}
+        backends={backends}
+        preprocessingParams={preprocessingParams}
+        onConfigsChange={setConfigs}
+        showPreprocessed={showPreprocessed}
+        onShowPreprocessedChange={(configId, show) =>
+          setShowPreprocessed((prev) => ({ ...prev, [configId]: show }))
+        }
+      />
 
       <Separator />
 

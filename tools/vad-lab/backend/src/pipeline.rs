@@ -3,6 +3,7 @@ use crate::session::VadConfig;
 use serde::Serialize;
 use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc};
+use wavekat_vad::preprocessing::Preprocessor;
 use wavekat_vad::VoiceActivityDetector;
 
 /// A VAD result from the pipeline.
@@ -14,6 +15,9 @@ pub struct PipelineResult {
     pub timestamp_ms: f64,
     /// Speech probability (0.0 - 1.0).
     pub probability: f32,
+    /// Preprocessed audio samples (for visualization).
+    #[serde(skip_serializing)]
+    pub preprocessed_samples: Vec<i16>,
 }
 
 /// Run the VAD pipeline: fan out audio frames to multiple VAD configs.
@@ -27,12 +31,15 @@ pub fn run_pipeline(
     let (result_tx, result_rx) = mpsc::channel::<PipelineResult>(1024);
 
     tokio::spawn(async move {
-        let mut detectors: Vec<(String, Box<dyn VoiceActivityDetector>)> = Vec::new();
+        // Create detector + preprocessor pairs for each config
+        let mut processors: Vec<(String, Preprocessor, Box<dyn VoiceActivityDetector>)> =
+            Vec::new();
 
         for config in &configs {
             match create_detector(config, sample_rate) {
                 Ok(detector) => {
-                    detectors.push((config.id.clone(), detector));
+                    let preprocessor = Preprocessor::new(&config.preprocessing, sample_rate);
+                    processors.push((config.id.clone(), preprocessor, detector));
                 }
                 Err(e) => {
                     tracing::error!(config_id = %config.id, "failed to create detector: {e}");
@@ -41,13 +48,18 @@ pub fn run_pipeline(
         }
 
         while let Ok(frame) = audio_rx.recv().await {
-            for (config_id, detector) in &mut detectors {
-                match detector.process(&frame.samples, sample_rate) {
+            for (config_id, preprocessor, detector) in &mut processors {
+                // Apply preprocessing
+                let preprocessed_samples = preprocessor.process(&frame.samples);
+
+                // Run VAD on preprocessed audio
+                match detector.process(&preprocessed_samples, sample_rate) {
                     Ok(probability) => {
                         let result = PipelineResult {
                             config_id: config_id.clone(),
                             timestamp_ms: frame.timestamp_ms,
                             probability,
+                            preprocessed_samples,
                         };
                         if result_tx.send(result).await.is_err() {
                             return;
@@ -123,6 +135,30 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
     );
 
     backends
+}
+
+/// Return the list of available preprocessing parameters.
+pub fn preprocessing_params() -> Vec<ParamInfo> {
+    vec![
+        ParamInfo {
+            name: "high_pass_hz".to_string(),
+            description: "High-pass filter cutoff (Hz)".to_string(),
+            param_type: ParamType::Float { min: 20.0, max: 500.0 },
+            default: serde_json::json!(null),
+        },
+        ParamInfo {
+            name: "denoise".to_string(),
+            description: "RNNoise noise suppression".to_string(),
+            param_type: ParamType::Select(vec!["off".to_string(), "on".to_string()]),
+            default: serde_json::json!("off"),
+        },
+        ParamInfo {
+            name: "normalize_dbfs".to_string(),
+            description: "Normalize to target level (dBFS)".to_string(),
+            param_type: ParamType::Float { min: -40.0, max: 0.0 },
+            default: serde_json::json!(null),
+        },
+    ]
 }
 
 /// Description of a configurable parameter.

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use wavekat_vad::preprocessing::PreprocessorConfig;
 
 /// Configuration for a single VAD instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,6 +14,9 @@ pub struct VadConfig {
     pub backend: String,
     /// Backend-specific parameters.
     pub params: HashMap<String, serde_json::Value>,
+    /// Preprocessing configuration. Defaults to no preprocessing.
+    #[serde(default)]
+    pub preprocessing: PreprocessorConfig,
 }
 
 /// A single VAD result for one frame.
@@ -79,6 +83,7 @@ mod tests {
             label: "WebRTC Quality".into(),
             backend: "webrtc".into(),
             params: HashMap::from([("mode".into(), serde_json::json!("0 - quality"))]),
+            preprocessing: PreprocessorConfig::default(),
         });
         session.results.insert(
             "webrtc-1".into(),

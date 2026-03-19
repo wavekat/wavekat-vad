@@ -46,6 +46,8 @@ pub enum ServerMessage {
     },
     Backends {
         backends: std::collections::HashMap<String, Vec<pipeline::ParamInfo>>,
+        /// Preprocessing parameters available for all configs.
+        preprocessing_params: Vec<pipeline::ParamInfo>,
     },
     RecordingStarted {
         sample_rate: u32,
@@ -60,6 +62,18 @@ pub enum ServerMessage {
     Spectrum {
         timestamp_ms: f64,
         /// Magnitude values in dB for each frequency bin (0 to Nyquist).
+        magnitudes: Vec<f32>,
+    },
+    /// Preprocessed audio for a specific config.
+    PreprocessedAudio {
+        config_id: String,
+        timestamp_ms: f64,
+        samples: Vec<i16>,
+    },
+    /// Spectrum of preprocessed audio for a specific config.
+    PreprocessedSpectrum {
+        config_id: String,
+        timestamp_ms: f64,
         magnitudes: Vec<f32>,
     },
     Vad {
@@ -113,8 +127,12 @@ pub async fn handle_ws(socket: WebSocket) {
 
             ClientMessage::ListBackends => {
                 let backends = pipeline::available_backends();
+                let preprocessing_params = pipeline::preprocessing_params();
                 let _ = ws_tx
-                    .send(send_msg(&ServerMessage::Backends { backends }))
+                    .send(send_msg(&ServerMessage::Backends {
+                        backends,
+                        preprocessing_params,
+                    }))
                     .await;
             }
 
@@ -201,16 +219,48 @@ pub async fn handle_ws(socket: WebSocket) {
                             }
                         });
 
-                        // Forward VAD results
+                        // Forward VAD results with preprocessed audio and spectrum
                         let msg_tx_vad = msg_tx;
+                        let vad_bins = spectrum_bins;
                         tokio::spawn(async move {
+                            // Per-config spectrum analyzers (lazily created)
+                            let mut analyzers: std::collections::HashMap<
+                                String,
+                                SpectrumAnalyzer,
+                            > = std::collections::HashMap::new();
+
                             while let Some(result) = result_rx.recv().await {
-                                let msg = ServerMessage::Vad {
-                                    config_id: result.config_id,
+                                // Send VAD result
+                                let vad_msg = ServerMessage::Vad {
+                                    config_id: result.config_id.clone(),
                                     timestamp_ms: result.timestamp_ms,
                                     probability: result.probability,
                                 };
-                                if msg_tx_vad.send(msg).await.is_err() {
+                                if msg_tx_vad.send(vad_msg).await.is_err() {
+                                    break;
+                                }
+
+                                // Send preprocessed audio
+                                let audio_msg = ServerMessage::PreprocessedAudio {
+                                    config_id: result.config_id.clone(),
+                                    timestamp_ms: result.timestamp_ms,
+                                    samples: result.preprocessed_samples.clone(),
+                                };
+                                if msg_tx_vad.send(audio_msg).await.is_err() {
+                                    break;
+                                }
+
+                                // Compute and send preprocessed spectrum
+                                let analyzer = analyzers
+                                    .entry(result.config_id.clone())
+                                    .or_insert_with(|| SpectrumAnalyzer::with_bins(vad_bins));
+                                let magnitudes = analyzer.compute(&result.preprocessed_samples);
+                                let spectrum_msg = ServerMessage::PreprocessedSpectrum {
+                                    config_id: result.config_id,
+                                    timestamp_ms: result.timestamp_ms,
+                                    magnitudes,
+                                };
+                                if msg_tx_vad.send(spectrum_msg).await.is_err() {
                                     break;
                                 }
                             }
@@ -312,19 +362,52 @@ pub async fn handle_ws(socket: WebSocket) {
                 // Play file and run pipeline
                 let configs_clone = configs.clone();
                 let msg_tx_done = msg_tx;
+                let file_bins = spectrum_bins;
                 tokio::spawn(async move {
                     let file_path = std::path::Path::new(&path);
                     match audio_source::play_file(file_path, frame_duration_ms, audio_tx).await {
                         Ok(sample_rate) => {
                             let mut result_rx =
                                 pipeline::run_pipeline(configs_clone, pipeline_rx, sample_rate);
+
+                            // Per-config spectrum analyzers
+                            let mut analyzers: std::collections::HashMap<
+                                String,
+                                SpectrumAnalyzer,
+                            > = std::collections::HashMap::new();
+
                             while let Some(result) = result_rx.recv().await {
-                                let msg = ServerMessage::Vad {
-                                    config_id: result.config_id,
+                                // Send VAD result
+                                let vad_msg = ServerMessage::Vad {
+                                    config_id: result.config_id.clone(),
                                     timestamp_ms: result.timestamp_ms,
                                     probability: result.probability,
                                 };
-                                if msg_tx_done.send(msg).await.is_err() {
+                                if msg_tx_done.send(vad_msg).await.is_err() {
+                                    break;
+                                }
+
+                                // Send preprocessed audio
+                                let audio_msg = ServerMessage::PreprocessedAudio {
+                                    config_id: result.config_id.clone(),
+                                    timestamp_ms: result.timestamp_ms,
+                                    samples: result.preprocessed_samples.clone(),
+                                };
+                                if msg_tx_done.send(audio_msg).await.is_err() {
+                                    break;
+                                }
+
+                                // Compute and send preprocessed spectrum
+                                let analyzer = analyzers
+                                    .entry(result.config_id.clone())
+                                    .or_insert_with(|| SpectrumAnalyzer::with_bins(file_bins));
+                                let magnitudes = analyzer.compute(&result.preprocessed_samples);
+                                let spectrum_msg = ServerMessage::PreprocessedSpectrum {
+                                    config_id: result.config_id,
+                                    timestamp_ms: result.timestamp_ms,
+                                    magnitudes,
+                                };
+                                if msg_tx_done.send(spectrum_msg).await.is_err() {
                                     break;
                                 }
                             }

@@ -17,9 +17,18 @@ interface ConfigPanelProps {
   backends: Record<string, ParamInfo[]>;
   preprocessingParams: ParamInfo[];
   onConfigsChange: (configs: VadConfig[]) => void;
+  showPreprocessed: Record<string, boolean>;
+  onShowPreprocessedChange: (configId: string, show: boolean) => void;
 }
 
-export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsChange }: ConfigPanelProps) {
+export function ConfigPanel({
+  configs,
+  backends,
+  preprocessingParams,
+  onConfigsChange,
+  showPreprocessed,
+  onShowPreprocessedChange,
+}: ConfigPanelProps) {
   const [nextId, setNextId] = useState(1);
 
   const addConfig = () => {
@@ -304,6 +313,22 @@ export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsC
                         <span className="text-xs text-muted-foreground">dBFS</span>
                       </div>
                     )}
+                  </div>
+
+                  {/* Show preprocessed visualization */}
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                    <input
+                      type="checkbox"
+                      id={`show-preprocessed-${config.id}`}
+                      checked={showPreprocessed[config.id] ?? false}
+                      onChange={(e) => {
+                        onShowPreprocessedChange(config.id, e.target.checked);
+                      }}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <Label htmlFor={`show-preprocessed-${config.id}`} className="text-xs cursor-pointer">
+                      Show preprocessed waveform/spectrum
+                    </Label>
                   </div>
                 </div>
               </CardContent>

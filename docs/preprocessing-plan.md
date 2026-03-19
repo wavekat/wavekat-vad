@@ -219,7 +219,7 @@ Keep the crate lightweight by default. Users opt in to heavier preprocessing.
 - [x] Update `ws.rs` to compute spectrum per-config and send to frontend
 - [x] Update frontend `websocket.ts` types
 - [x] Update `ConfigPanel.tsx` to show preprocessing options
-- [ ] Update visualization components to show per-config waveform/spectrum
+- [x] Update visualization components to show per-config waveform/spectrum
 
 ### Phase 4: Noise Suppression
 - [x] Add `nnnoiseless` dependency behind `denoise` feature

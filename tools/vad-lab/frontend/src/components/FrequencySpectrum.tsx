@@ -150,10 +150,10 @@ const BINS_OPTIONS = [32, 64, 128, 256, 512];
 // Gain options - higher gain makes quiet sounds more visible
 // by compressing the dB range (loud sounds clip to bright)
 const GAIN_OPTIONS = [
-  { label: "0dB", minDb: -80, maxDb: 0 },    // Full 80dB range, no boost
-  { label: "+10dB", minDb: -80, maxDb: -10 }, // 70dB range, slight boost
-  { label: "+20dB", minDb: -80, maxDb: -20 }, // 60dB range, moderate boost
-  { label: "+30dB", minDb: -80, maxDb: -30 }, // 50dB range, high boost - quiet sounds visible
+  { label: "0dB", minDb: -120, maxDb: 0 },    // Full 120dB range, no boost
+  { label: "+20dB", minDb: -120, maxDb: -20 }, // 100dB range, slight boost
+  { label: "+40dB", minDb: -120, maxDb: -40 }, // 80dB range, moderate boost
+  { label: "+60dB", minDb: -120, maxDb: -60 }, // 60dB range, high boost - quiet sounds visible
 ];
 
 export function FrequencySpectrum({
@@ -174,7 +174,7 @@ export function FrequencySpectrum({
 }: FrequencySpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [freqScale, setFreqScale] = useState<FreqScale>("log");
+  const [freqScale, setFreqScale] = useState<FreqScale>("mel");
   const [gain, setGain] = useState(2); // Index into GAIN_OPTIONS (default +20dB for better detail)
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; viewStartMs: number } | null>(null);
@@ -250,7 +250,7 @@ export function FrequencySpectrum({
       const binFrac = binFloat - binLow;
 
       if (binLow < 0 || binHigh >= frame.magnitudes.length) {
-        return -80;
+        return -120;
       } else if (binLow === binHigh) {
         return frame.magnitudes[binLow];
       } else {
@@ -428,7 +428,7 @@ export function FrequencySpectrum({
 
               let db: number;
               if (binLow < 0 || binHigh >= magnitudes.length) {
-                db = minDb;
+                db = -120;
               } else if (binLow === binHigh) {
                 db = magnitudes[binLow];
               } else {

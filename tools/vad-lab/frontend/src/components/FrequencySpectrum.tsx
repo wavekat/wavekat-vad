@@ -51,13 +51,41 @@ interface FrequencySpectrumProps {
   playheadMs?: number | null;
 }
 
-type FreqScale = "linear" | "log";
+type FreqScale = "linear" | "log" | "mel";
 
 /** Convert linear frequency to logarithmic position (0-1) */
 function freqToLogPosition(freq: number, minFreq: number, maxFreq: number): number {
   if (freq <= minFreq) return 0;
   if (freq >= maxFreq) return 1;
   return Math.log(freq / minFreq) / Math.log(maxFreq / minFreq);
+}
+
+/** Convert frequency (Hz) to mel scale */
+function hzToMel(freq: number): number {
+  return 2595 * Math.log10(1 + freq / 700);
+}
+
+/** Convert mel to frequency (Hz) */
+function melToHz(mel: number): number {
+  return 700 * (Math.pow(10, mel / 2595) - 1);
+}
+
+/** Convert linear frequency to mel position (0-1) */
+function freqToMelPosition(freq: number, minFreq: number, maxFreq: number): number {
+  if (freq <= minFreq) return 0;
+  if (freq >= maxFreq) return 1;
+  const minMel = hzToMel(minFreq);
+  const maxMel = hzToMel(maxFreq);
+  const mel = hzToMel(freq);
+  return (mel - minMel) / (maxMel - minMel);
+}
+
+/** Convert mel position (0-1) to frequency (Hz) */
+function melPositionToFreq(pos: number, minFreq: number, maxFreq: number): number {
+  const minMel = hzToMel(minFreq);
+  const maxMel = hzToMel(maxFreq);
+  const mel = minMel + pos * (maxMel - minMel);
+  return melToHz(mel);
 }
 
 /** Map dB value to RGB color components with configurable range
@@ -275,6 +303,8 @@ export function FrequencySpectrum({
         let freq: number;
         if (freqScale === "log") {
           freq = logPositionToFreq(yNorm, minFreq, maxFreq);
+        } else if (freqScale === "mel") {
+          freq = melPositionToFreq(yNorm, minFreq, maxFreq);
         } else {
           freq = yNorm * maxFreq;
         }
@@ -318,6 +348,8 @@ export function FrequencySpectrum({
       let yNorm: number;
       if (freqScale === "log") {
         yNorm = freqToLogPosition(freq, minFreq, maxFreq);
+      } else if (freqScale === "mel") {
+        yNorm = freqToMelPosition(freq, minFreq, maxFreq);
       } else {
         yNorm = freq / maxFreq;
       }
@@ -545,12 +577,22 @@ export function FrequencySpectrum({
             <Button
               variant="ghost"
               size="xs"
-              className={`rounded-none rounded-r-md border-0 border-l border-input ${
+              className={`rounded-none border-0 border-l border-input ${
                 freqScale === "log" ? "bg-accent text-accent-foreground" : ""
               }`}
               onClick={() => setFreqScale("log")}
             >
               Log
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              className={`rounded-none rounded-r-md border-0 border-l border-input ${
+                freqScale === "mel" ? "bg-accent text-accent-foreground" : ""
+              }`}
+              onClick={() => setFreqScale("mel")}
+            >
+              Mel
             </Button>
           </div>
         </div>

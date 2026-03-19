@@ -146,7 +146,12 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
             param_type: ParamType::Float { min: 20.0, max: 500.0 },
             default: serde_json::json!(null),
         },
-        // TODO: Add denoise and normalize_dbfs when implemented
+        ParamInfo {
+            name: "denoise".to_string(),
+            description: "RNNoise noise suppression".to_string(),
+            param_type: ParamType::Select(vec!["off".to_string(), "on".to_string()]),
+            default: serde_json::json!("off"),
+        },
     ]
 }
 

@@ -21,7 +21,14 @@
 
 mod biquad;
 
+#[cfg(feature = "denoise")]
+mod denoise;
+
 pub use biquad::BiquadFilter;
+
+#[cfg(feature = "denoise")]
+pub use denoise::{Denoiser, DENOISE_SAMPLE_RATE};
+
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the audio preprocessor.
@@ -40,7 +47,7 @@ pub struct PreprocessorConfig {
     /// Enable RNNoise-based noise suppression.
     ///
     /// Suppresses stationary background noise while preserving speech.
-    /// Requires the `denoise` feature flag.
+    /// Requires the `denoise` feature flag and 48kHz sample rate.
     #[serde(default)]
     pub denoise: bool,
 
@@ -61,11 +68,15 @@ impl PreprocessorConfig {
     /// Preset for raw microphone input.
     ///
     /// Enables high-pass filter at 80Hz to remove room rumble.
+    /// With `denoise` feature, also enables noise suppression.
     pub fn raw_mic() -> Self {
         Self {
             high_pass_hz: Some(80.0),
-            denoise: false,       // Enable when `denoise` feature is ready
-            normalize_dbfs: None, // Enable when normalizer is ready
+            #[cfg(feature = "denoise")]
+            denoise: true,
+            #[cfg(not(feature = "denoise"))]
+            denoise: false,
+            normalize_dbfs: None,
         }
     }
 
@@ -89,11 +100,30 @@ impl PreprocessorConfig {
 ///
 /// Each instance maintains its own filter state, so you should create
 /// one `Preprocessor` per audio stream (or per VAD config in vad-lab).
-#[derive(Debug)]
+///
+/// # Processing Order
+///
+/// 1. High-pass filter (removes low-frequency noise)
+/// 2. Noise suppression (RNNoise, requires 48kHz)
+/// 3. Normalization (not yet implemented)
 pub struct Preprocessor {
     high_pass: Option<BiquadFilter>,
+    #[cfg(feature = "denoise")]
+    denoiser: Option<Denoiser>,
     sample_rate: u32,
     enabled: bool,
+}
+
+impl std::fmt::Debug for Preprocessor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("Preprocessor");
+        s.field("high_pass", &self.high_pass.is_some());
+        #[cfg(feature = "denoise")]
+        s.field("denoiser", &self.denoiser.is_some());
+        s.field("sample_rate", &self.sample_rate);
+        s.field("enabled", &self.enabled);
+        s.finish()
+    }
 }
 
 impl Preprocessor {
@@ -102,18 +132,39 @@ impl Preprocessor {
     /// # Arguments
     /// * `config` - Preprocessing configuration
     /// * `sample_rate` - Audio sample rate in Hz
+    ///
+    /// # Notes
+    ///
+    /// Noise suppression (`denoise: true`) requires 48kHz sample rate.
+    /// If enabled at a different sample rate, it will be silently disabled.
     pub fn new(config: &PreprocessorConfig, sample_rate: u32) -> Self {
         let high_pass = config.high_pass_hz.map(|cutoff| {
             BiquadFilter::highpass_butterworth(cutoff, sample_rate)
         });
 
-        // TODO: Initialize denoiser when `denoise` feature is implemented
-        // TODO: Initialize normalizer when implemented
+        #[cfg(feature = "denoise")]
+        let denoiser = if config.denoise && sample_rate == DENOISE_SAMPLE_RATE {
+            Some(Denoiser::new(sample_rate))
+        } else {
+            if config.denoise && sample_rate != DENOISE_SAMPLE_RATE {
+                // Silently disable - caller should use 48kHz for denoising
+            }
+            None
+        };
+
+        #[cfg(feature = "denoise")]
+        let denoise_enabled = denoiser.is_some();
+        #[cfg(not(feature = "denoise"))]
+        let denoise_enabled = false;
+
+        let enabled = high_pass.is_some() || denoise_enabled || config.normalize_dbfs.is_some();
 
         Self {
             high_pass,
+            #[cfg(feature = "denoise")]
+            denoiser,
             sample_rate,
-            enabled: config.is_enabled(),
+            enabled,
         }
     }
 
@@ -125,6 +176,12 @@ impl Preprocessor {
     /// Returns true if any preprocessing stages are enabled.
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Returns true if noise suppression is active.
+    #[cfg(feature = "denoise")]
+    pub fn is_denoising(&self) -> bool {
+        self.denoiser.is_some()
     }
 
     /// Process audio samples and return the preprocessed result.
@@ -143,7 +200,12 @@ impl Preprocessor {
             filter.process_i16(&mut output);
         }
 
-        // Stage 2: Noise suppression (TODO)
+        // Stage 2: Noise suppression
+        #[cfg(feature = "denoise")]
+        if let Some(ref mut denoiser) = self.denoiser {
+            output = denoiser.process(&output);
+        }
+
         // Stage 3: Normalization (TODO)
 
         output
@@ -155,6 +217,10 @@ impl Preprocessor {
     pub fn reset(&mut self) {
         if let Some(ref mut filter) = self.high_pass {
             filter.reset();
+        }
+        #[cfg(feature = "denoise")]
+        if let Some(ref mut denoiser) = self.denoiser {
+            denoiser.reset();
         }
     }
 }
@@ -250,5 +316,41 @@ mod tests {
 
         // Reset should not panic
         preprocessor.reset();
+    }
+
+    #[cfg(feature = "denoise")]
+    #[test]
+    fn test_preprocessor_denoise_requires_48khz() {
+        // At 16kHz, denoising should be disabled
+        let config = PreprocessorConfig {
+            denoise: true,
+            ..Default::default()
+        };
+        let preprocessor = Preprocessor::new(&config, 16000);
+        assert!(!preprocessor.is_denoising());
+
+        // At 48kHz, denoising should be enabled
+        let preprocessor = Preprocessor::new(&config, 48000);
+        assert!(preprocessor.is_denoising());
+    }
+
+    #[cfg(feature = "denoise")]
+    #[test]
+    fn test_preprocessor_denoise() {
+        let config = PreprocessorConfig {
+            denoise: true,
+            ..Default::default()
+        };
+        let mut preprocessor = Preprocessor::new(&config, 48000);
+
+        assert!(preprocessor.is_enabled());
+        assert!(preprocessor.is_denoising());
+
+        // Process some audio (silence)
+        let input: Vec<i16> = vec![0; 960]; // 20ms at 48kHz
+        let output = preprocessor.process(&input);
+
+        // Output length may differ slightly due to frame buffering
+        assert!(!output.is_empty());
     }
 }

@@ -8,7 +8,8 @@ use tokio::sync::broadcast;
 const SUPPORTED_SAMPLE_RATES: &[u32] = &[8000, 16000, 32000, 48000];
 
 /// Default target sample rate when resampling is needed.
-const DEFAULT_TARGET_SAMPLE_RATE: u32 = 16000;
+/// Using 48kHz to support both VAD backends and noise suppression (which requires 48kHz).
+const DEFAULT_TARGET_SAMPLE_RATE: u32 = 48000;
 
 /// Information about an available audio input device.
 #[derive(Debug, Clone, Serialize, Deserialize)]

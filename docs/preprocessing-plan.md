@@ -221,10 +221,11 @@ Keep the crate lightweight by default. Users opt in to heavier preprocessing.
 - [x] Update `ConfigPanel.tsx` to show preprocessing options
 - [ ] Update visualization components to show per-config waveform/spectrum
 
-### Phase 4: Noise Suppression (Optional)
-- [ ] Add `nnnoiseless` dependency behind `denoise` feature
-- [ ] Create `preprocessing/denoise.rs` wrapper
-- [ ] Integrate into `Preprocessor` chain
+### Phase 4: Noise Suppression
+- [x] Add `nnnoiseless` dependency behind `denoise` feature
+- [x] Create `preprocessing/denoise.rs` wrapper
+- [x] Integrate into `Preprocessor` chain
+- [x] Enable in vad-lab (uses 48kHz for denoise compatibility)
 - [ ] Test with vad-lab: compare raw vs. denoised VAD results side-by-side
 
 ### Phase 5: Normalizer (Optional)

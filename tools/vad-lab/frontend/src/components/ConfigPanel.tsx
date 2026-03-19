@@ -220,6 +220,24 @@ export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsC
                       </div>
                     )}
                   </div>
+
+                  {/* Noise suppression */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id={`denoise-${config.id}`}
+                      checked={config.preprocessing?.denoise ?? false}
+                      onChange={(e) => {
+                        updatePreprocessing(config.id, {
+                          denoise: e.target.checked,
+                        });
+                      }}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <Label htmlFor={`denoise-${config.id}`} className="text-xs cursor-pointer">
+                      Noise suppression (RNNoise)
+                    </Label>
+                  </div>
                 </div>
               </CardContent>
             </Card>

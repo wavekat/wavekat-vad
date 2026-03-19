@@ -190,6 +190,7 @@ Heavier dependencies are fine here — it's a dev tool, not shipped to users:
 - Each experiment should document: goal, method, results, conclusions
 - Feature branches for each backend: `feat/webrtc-vad`, `feat/silero-vad`
 - Keep the main branch stable and buildable
+- **Always use squash merge** when merging feature branches into main (keeps history clean)
 
 ## Audio Format Notes
 

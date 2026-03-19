@@ -14,6 +14,8 @@ interface VadTimelineProps {
   onHoverTimeChange?: (timeMs: number | null) => void;
   /** When true, "now" is anchored to right edge */
   recording?: boolean;
+  /** Current playhead position in milliseconds (for playback) */
+  playheadMs?: number | null;
 }
 
 export function VadTimeline({
@@ -28,6 +30,7 @@ export function VadTimeline({
   hoverTimeMs,
   onHoverTimeChange,
   recording = false,
+  playheadMs,
 }: VadTimelineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -146,7 +149,47 @@ export function VadTimeline({
         }
       }
     }
-  }, [results, width, height, color, hoverTimeMs, effectiveViewport]);
+
+    // Draw playhead
+    if (playheadMs != null && totalDurationMs > 0) {
+      const x = timeToPixel(playheadMs, width, effectiveViewport);
+
+      if (x >= 0 && x <= width) {
+        // Playhead line (bright blue)
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+
+        // Show probability at playhead position
+        const closestResult = results.reduce<{
+          timestamp_ms: number;
+          probability: number;
+        } | null>((closest, r) => {
+          if (!closest) return r;
+          return Math.abs(r.timestamp_ms - playheadMs) <
+            Math.abs(closest.timestamp_ms - playheadMs)
+            ? r
+            : closest;
+        }, null);
+
+        if (
+          closestResult &&
+          Math.abs(closestResult.timestamp_ms - playheadMs) < 100
+        ) {
+          const probStr = (closestResult.probability * 100).toFixed(0) + "%";
+          ctx.font = "10px monospace";
+          ctx.fillStyle = "#3b82f6";
+          const textWidth = ctx.measureText(probStr).width;
+          const labelX =
+            x + 4 > width - textWidth - 4 ? x - textWidth - 4 : x + 4;
+          ctx.fillText(probStr, labelX, height / 2 + 4);
+        }
+      }
+    }
+  }, [results, width, height, color, hoverTimeMs, playheadMs, totalDurationMs, effectiveViewport]);
 
   return (
     <div className={className}>

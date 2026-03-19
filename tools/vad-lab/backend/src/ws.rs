@@ -6,6 +6,12 @@ use tokio::sync::broadcast;
 use crate::audio_source::{self, AudioDevice, AudioFrame};
 use crate::pipeline;
 use crate::session::VadConfig;
+use crate::spectrum::{SpectrumAnalyzer, DEFAULT_OUTPUT_BINS};
+
+/// Default maximum recording duration: 2 minutes.
+fn default_max_duration_secs() -> u64 {
+    120
+}
 
 /// Messages sent from the client to the server.
 #[derive(Debug, Deserialize)]
@@ -15,6 +21,9 @@ pub enum ClientMessage {
     ListBackends,
     StartRecording {
         device_index: usize,
+        /// Maximum recording duration in seconds. Defaults to 120 (2 minutes).
+        #[serde(default = "default_max_duration_secs")]
+        max_duration_secs: u64,
     },
     StopRecording,
     LoadFile {
@@ -22,6 +31,9 @@ pub enum ClientMessage {
     },
     SetConfigs {
         configs: Vec<VadConfig>,
+    },
+    SetSpectrumBins {
+        bins: usize,
     },
 }
 
@@ -37,10 +49,18 @@ pub enum ServerMessage {
     },
     RecordingStarted {
         sample_rate: u32,
+        /// Number of frequency bins in spectrum data.
+        spectrum_bins: usize,
     },
     Audio {
         timestamp_ms: f64,
         samples: Vec<i16>,
+    },
+    /// Frequency spectrum data computed via FFT.
+    Spectrum {
+        timestamp_ms: f64,
+        /// Magnitude values in dB for each frequency bin (0 to Nyquist).
+        magnitudes: Vec<f32>,
     },
     Vad {
         config_id: String,
@@ -62,6 +82,7 @@ pub async fn handle_ws(socket: WebSocket) {
     let (mut ws_tx, mut ws_rx) = socket.split();
     let mut configs: Vec<VadConfig> = Vec::new();
     let mut stop_tx: Option<tokio::sync::oneshot::Sender<()>> = None;
+    let mut spectrum_bins: usize = DEFAULT_OUTPUT_BINS;
 
     let frame_duration_ms: u32 = 20;
 
@@ -104,7 +125,25 @@ pub async fn handle_ws(socket: WebSocket) {
                 configs = new_configs;
             }
 
-            ClientMessage::StartRecording { device_index } => {
+            ClientMessage::SetSpectrumBins { bins: new_bins } => {
+                // Validate bins (must be power of 2 and divide 512 evenly)
+                let valid_bins = [32, 64, 128, 256, 512];
+                if valid_bins.contains(&new_bins) {
+                    tracing::info!(bins = new_bins, "spectrum bins updated");
+                    spectrum_bins = new_bins;
+                } else {
+                    let _ = ws_tx
+                        .send(send_msg(&ServerMessage::Error {
+                            message: format!("invalid bins: {new_bins}, must be one of {valid_bins:?}"),
+                        }))
+                        .await;
+                }
+            }
+
+            ClientMessage::StartRecording {
+                device_index,
+                max_duration_secs,
+            } => {
                 // Stop any existing capture
                 if let Some(tx) = stop_tx.take() {
                     let _ = tx.send(());
@@ -118,9 +157,12 @@ pub async fn handle_ws(socket: WebSocket) {
 
                         tracing::info!(sample_rate, "capture started");
 
-                        // Notify client of sample rate
+                        // Notify client of sample rate and spectrum info
                         let _ = ws_tx
-                            .send(send_msg(&ServerMessage::RecordingStarted { sample_rate }))
+                            .send(send_msg(&ServerMessage::RecordingStarted {
+                                sample_rate,
+                                spectrum_bins,
+                            }))
                             .await;
 
                         // Start the pipeline
@@ -131,16 +173,29 @@ pub async fn handle_ws(socket: WebSocket) {
                         // Collect messages from both audio and pipeline into one channel
                         let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ServerMessage>(512);
 
-                        // Forward audio frames
+                        // Forward audio frames and compute spectrum
                         let msg_tx_audio = msg_tx.clone();
                         let mut audio_rx = capture.rx;
+                        let bins = spectrum_bins;
                         tokio::spawn(async move {
+                            let mut analyzer = SpectrumAnalyzer::with_bins(bins);
                             while let Ok(frame) = audio_rx.recv().await {
-                                let msg = ServerMessage::Audio {
+                                // Send audio samples
+                                let audio_msg = ServerMessage::Audio {
                                     timestamp_ms: frame.timestamp_ms,
-                                    samples: frame.samples,
+                                    samples: frame.samples.clone(),
                                 };
-                                if msg_tx_audio.send(msg).await.is_err() {
+                                if msg_tx_audio.send(audio_msg).await.is_err() {
+                                    break;
+                                }
+
+                                // Compute and send spectrum
+                                let magnitudes = analyzer.compute(&frame.samples);
+                                let spectrum_msg = ServerMessage::Spectrum {
+                                    timestamp_ms: frame.timestamp_ms,
+                                    magnitudes,
+                                };
+                                if msg_tx_audio.send(spectrum_msg).await.is_err() {
                                     break;
                                 }
                             }
@@ -162,6 +217,11 @@ pub async fn handle_ws(socket: WebSocket) {
                         });
 
                         // Stream messages to the client until stop
+                        // Maximum recording duration (configurable, default 2 minutes)
+                        let max_duration =
+                            tokio::time::sleep(std::time::Duration::from_secs(max_duration_secs));
+                        tokio::pin!(max_duration);
+
                         loop {
                             tokio::select! {
                                 Some(msg) = msg_rx.recv() => {
@@ -183,6 +243,18 @@ pub async fn handle_ws(socket: WebSocket) {
                                         None | Some(Err(_)) => break, // client disconnected
                                         _ => {}
                                     }
+                                }
+                                () = &mut max_duration => {
+                                    // Auto-stop after configured duration
+                                    if let Some(tx) = stop_tx.take() {
+                                        let _ = tx.send(());
+                                    }
+                                    tracing::info!(
+                                        duration_secs = max_duration_secs,
+                                        "recording auto-stopped after max duration"
+                                    );
+                                    let _ = ws_tx.send(send_msg(&ServerMessage::Done)).await;
+                                    break;
                                 }
                             }
                         }
@@ -210,15 +282,28 @@ pub async fn handle_ws(socket: WebSocket) {
 
                 let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ServerMessage>(512);
 
-                // Forward audio frames to client
+                // Forward audio frames and spectrum to client
                 let msg_tx_audio = msg_tx.clone();
+                let bins = spectrum_bins;
                 tokio::spawn(async move {
+                    let mut analyzer = SpectrumAnalyzer::with_bins(bins);
                     while let Ok(frame) = forward_rx.recv().await {
-                        let msg = ServerMessage::Audio {
+                        // Send audio samples
+                        let audio_msg = ServerMessage::Audio {
                             timestamp_ms: frame.timestamp_ms,
-                            samples: frame.samples,
+                            samples: frame.samples.clone(),
                         };
-                        if msg_tx_audio.send(msg).await.is_err() {
+                        if msg_tx_audio.send(audio_msg).await.is_err() {
+                            break;
+                        }
+
+                        // Compute and send spectrum
+                        let magnitudes = analyzer.compute(&frame.samples);
+                        let spectrum_msg = ServerMessage::Spectrum {
+                            timestamp_ms: frame.timestamp_ms,
+                            magnitudes,
+                        };
+                        if msg_tx_audio.send(spectrum_msg).await.is_err() {
                             break;
                         }
                     }

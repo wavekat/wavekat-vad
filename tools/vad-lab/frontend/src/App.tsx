@@ -390,6 +390,7 @@ function App() {
           <VadTimeline
             key={config.id}
             label={config.label}
+            config={config}
             results={vadResults[config.id] ?? []}
             totalDurationMs={totalDurationMs}
             viewport={viewport}
@@ -458,6 +459,7 @@ function App() {
               />
               <VadTimeline
                 label={config.label}
+                config={config}
                 results={vadResults[config.id] ?? []}
                 totalDurationMs={totalDurationMs}
                 viewport={viewport}

@@ -424,7 +424,10 @@ function App() {
               <Waveform
                 samples={configSamples}
                 totalDurationMs={totalDurationMs}
-                sampleRate={sampleRate}
+                // Don't pass sampleRate for preprocessed audio - let it calculate
+                // samplesPerMs from actual samples.length / totalDurationMs.
+                // Preprocessing (especially denoise) uses internal buffering that
+                // can cause the output sample count to differ from the input.
                 viewport={viewport}
                 onViewportChange={setViewport}
                 width={containerWidth}

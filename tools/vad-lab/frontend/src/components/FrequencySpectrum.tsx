@@ -120,10 +120,10 @@ const BINS_OPTIONS = [32, 64, 128, 256, 512];
 // Gain options - higher gain makes quiet sounds more visible
 // by compressing the dB range (loud sounds clip to bright)
 const GAIN_OPTIONS = [
-  { label: "0dB", minDb: -80, maxDb: 0 },    // Full range, no boost
-  { label: "+10dB", minDb: -70, maxDb: -10 }, // Slight boost
-  { label: "+20dB", minDb: -60, maxDb: -20 }, // Moderate boost - good default
-  { label: "+30dB", minDb: -50, maxDb: -30 }, // High boost, see noise clearly
+  { label: "0dB", minDb: -80, maxDb: 0 },    // Full 80dB range, no boost
+  { label: "+10dB", minDb: -80, maxDb: -10 }, // 70dB range, slight boost
+  { label: "+20dB", minDb: -80, maxDb: -20 }, // 60dB range, moderate boost
+  { label: "+30dB", minDb: -80, maxDb: -30 }, // 50dB range, high boost - quiet sounds visible
 ];
 
 export function FrequencySpectrum({

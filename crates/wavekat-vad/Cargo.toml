@@ -10,6 +10,7 @@ default = ["webrtc"]
 webrtc = ["dep:webrtc-vad"]
 silero = ["dep:ort", "dep:ndarray"]
 denoise = ["dep:nnnoiseless", "dep:rubato"]
+ten-vad = []  # links prebuilt C library via build.rs
 
 [dependencies]
 thiserror = { workspace = true }

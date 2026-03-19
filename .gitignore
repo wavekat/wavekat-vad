@@ -35,3 +35,6 @@ tools/vad-lab/frontend/dist/
 
 # ONNX models (downloaded at build time)
 crates/wavekat-vad/models/
+
+# TEN-VAD runtime model directory (created by setup_model_dir())
+onnx_model/

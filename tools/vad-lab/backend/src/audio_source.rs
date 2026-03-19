@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::sync::broadcast;
 
-/// Sample rates supported by the VAD backends.
-const SUPPORTED_SAMPLE_RATES: &[u32] = &[8000, 16000, 32000, 48000];
+/// Sample rates supported by all VAD backends (Silero only supports 8k/16k).
+const SUPPORTED_SAMPLE_RATES: &[u32] = &[8000, 16000];
 
 /// Default target sample rate when resampling is needed.
-/// Using 48kHz to support both VAD backends and noise suppression (which requires 48kHz).
-const DEFAULT_TARGET_SAMPLE_RATE: u32 = 48000;
+/// Using 16kHz as the standard VAD rate (both Silero and WebRTC support it).
+/// Denoise handles its own internal resampling to 48kHz if enabled.
+const DEFAULT_TARGET_SAMPLE_RATE: u32 = 16000;
 
 /// Information about an available audio input device.
 #[derive(Debug, Clone, Serialize, Deserialize)]

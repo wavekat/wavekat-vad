@@ -21,18 +21,38 @@
 //! println!("Speech probability: {probability}");
 //! ```
 
+pub mod adapter;
 pub mod backends;
 pub mod error;
 pub mod frame;
 pub mod preprocessing;
 
+pub use adapter::FrameAdapter;
+
 pub use error::VadError;
+
+/// Describes the audio requirements of a VAD backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VadCapabilities {
+    /// Sample rate in Hz.
+    pub sample_rate: u32,
+    /// Required frame size in samples.
+    pub frame_size: usize,
+    /// Frame duration in milliseconds (derived from sample_rate and frame_size).
+    pub frame_duration_ms: u32,
+}
 
 /// Common interface for voice activity detection backends.
 ///
 /// Each backend implements this trait, allowing callers to swap
 /// implementations without changing their processing logic.
 pub trait VoiceActivityDetector: Send {
+    /// Returns the audio requirements of this detector.
+    ///
+    /// Use this to determine the expected sample rate and frame size
+    /// before calling [`process`](Self::process).
+    fn capabilities(&self) -> VadCapabilities;
+
     /// Process an audio frame and return the probability of speech.
     ///
     /// Returns a value between `0.0` (silence) and `1.0` (speech).
@@ -42,6 +62,7 @@ pub trait VoiceActivityDetector: Send {
     /// # Arguments
     ///
     /// * `samples` — Audio samples as 16-bit signed integers, mono channel.
+    ///   Must match the `frame_size` from [`capabilities`](Self::capabilities).
     /// * `sample_rate` — Sample rate in Hz (must match the rate the detector was created with).
     ///
     /// # Errors

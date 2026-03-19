@@ -51,13 +51,41 @@ interface FrequencySpectrumProps {
   playheadMs?: number | null;
 }
 
-type FreqScale = "linear" | "log";
+type FreqScale = "linear" | "log" | "mel";
 
 /** Convert linear frequency to logarithmic position (0-1) */
 function freqToLogPosition(freq: number, minFreq: number, maxFreq: number): number {
   if (freq <= minFreq) return 0;
   if (freq >= maxFreq) return 1;
   return Math.log(freq / minFreq) / Math.log(maxFreq / minFreq);
+}
+
+/** Convert frequency (Hz) to mel scale */
+function hzToMel(freq: number): number {
+  return 2595 * Math.log10(1 + freq / 700);
+}
+
+/** Convert mel to frequency (Hz) */
+function melToHz(mel: number): number {
+  return 700 * (Math.pow(10, mel / 2595) - 1);
+}
+
+/** Convert linear frequency to mel position (0-1) */
+function freqToMelPosition(freq: number, minFreq: number, maxFreq: number): number {
+  if (freq <= minFreq) return 0;
+  if (freq >= maxFreq) return 1;
+  const minMel = hzToMel(minFreq);
+  const maxMel = hzToMel(maxFreq);
+  const mel = hzToMel(freq);
+  return (mel - minMel) / (maxMel - minMel);
+}
+
+/** Convert mel position (0-1) to frequency (Hz) */
+function melPositionToFreq(pos: number, minFreq: number, maxFreq: number): number {
+  const minMel = hzToMel(minFreq);
+  const maxMel = hzToMel(maxFreq);
+  const mel = minMel + pos * (maxMel - minMel);
+  return melToHz(mel);
 }
 
 /** Map dB value to RGB color components with configurable range
@@ -122,10 +150,10 @@ const BINS_OPTIONS = [32, 64, 128, 256, 512];
 // Gain options - higher gain makes quiet sounds more visible
 // by compressing the dB range (loud sounds clip to bright)
 const GAIN_OPTIONS = [
-  { label: "0dB", minDb: -80, maxDb: 0 },    // Full 80dB range, no boost
-  { label: "+10dB", minDb: -80, maxDb: -10 }, // 70dB range, slight boost
-  { label: "+20dB", minDb: -80, maxDb: -20 }, // 60dB range, moderate boost
-  { label: "+30dB", minDb: -80, maxDb: -30 }, // 50dB range, high boost - quiet sounds visible
+  { label: "0dB", minDb: -120, maxDb: 0 },    // Full 120dB range, no boost
+  { label: "+20dB", minDb: -120, maxDb: -20 }, // 100dB range, slight boost
+  { label: "+40dB", minDb: -120, maxDb: -40 }, // 80dB range, moderate boost
+  { label: "+60dB", minDb: -120, maxDb: -60 }, // 60dB range, high boost - quiet sounds visible
 ];
 
 export function FrequencySpectrum({
@@ -146,7 +174,7 @@ export function FrequencySpectrum({
 }: FrequencySpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [freqScale, setFreqScale] = useState<FreqScale>("log");
+  const [freqScale, setFreqScale] = useState<FreqScale>("mel");
   const [gain, setGain] = useState(2); // Index into GAIN_OPTIONS (default +20dB for better detail)
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; viewStartMs: number } | null>(null);
@@ -222,7 +250,7 @@ export function FrequencySpectrum({
       const binFrac = binFloat - binLow;
 
       if (binLow < 0 || binHigh >= frame.magnitudes.length) {
-        return -80;
+        return -120;
       } else if (binLow === binHigh) {
         return frame.magnitudes[binLow];
       } else {
@@ -275,6 +303,8 @@ export function FrequencySpectrum({
         let freq: number;
         if (freqScale === "log") {
           freq = logPositionToFreq(yNorm, minFreq, maxFreq);
+        } else if (freqScale === "mel") {
+          freq = melPositionToFreq(yNorm, minFreq, maxFreq);
         } else {
           freq = yNorm * maxFreq;
         }
@@ -318,6 +348,8 @@ export function FrequencySpectrum({
       let yNorm: number;
       if (freqScale === "log") {
         yNorm = freqToLogPosition(freq, minFreq, maxFreq);
+      } else if (freqScale === "mel") {
+        yNorm = freqToMelPosition(freq, minFreq, maxFreq);
       } else {
         yNorm = freq / maxFreq;
       }
@@ -334,7 +366,7 @@ export function FrequencySpectrum({
       }
     }
 
-    // Draw hover crosshair
+    // Draw hover crosshair and dB slice line
     if (hoverTimeMs != null && totalDurationMs > 0) {
       const x = timeToPixel(hoverTimeMs, width, effectiveViewport);
 
@@ -352,6 +384,79 @@ export function FrequencySpectrum({
         const textWidth = ctx.measureText(timeStr).width;
         const labelX = x + 4 > width - textWidth - 4 ? x - textWidth - 4 : x + 4;
         ctx.fillText(timeStr, labelX, 12);
+
+        // Draw dB slice line next to crosshair
+        if (spectrumData.length > 0) {
+          // Find closest frame
+          let closestFrame = sortedFrames[0];
+          let minDiff = Math.abs(sortedFrames[0].timestamp_ms - hoverTimeMs);
+          for (const frame of sortedFrames) {
+            const diff = Math.abs(frame.timestamp_ms - hoverTimeMs);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestFrame = frame;
+            }
+          }
+
+          if (closestFrame) {
+            const magnitudes = closestFrame.magnitudes;
+            const numBinsLocal = magnitudes.length;
+            const freqPerBinLocal = sampleRate / (numBinsLocal * 2);
+            const dbRange = maxDb - minDb;
+            const sliceWidth = 60; // Width of the dB slice visualization
+            const flipLeft = x + sliceWidth + 4 > width;
+
+            // Build the path points
+            const points: { x: number; y: number }[] = [];
+            for (let py = 0; py < height; py++) {
+              const yNorm = 1 - py / height;
+
+              let freq: number;
+              if (freqScale === "log") {
+                freq = logPositionToFreq(yNorm, minFreq, maxFreq);
+              } else if (freqScale === "mel") {
+                freq = melPositionToFreq(yNorm, minFreq, maxFreq);
+              } else {
+                freq = yNorm * maxFreq;
+              }
+
+              // Get magnitude with interpolation
+              const binFloat = freq / freqPerBinLocal;
+              const binLow = Math.floor(binFloat);
+              const binHigh = Math.ceil(binFloat);
+              const binFrac = binFloat - binLow;
+
+              let db: number;
+              if (binLow < 0 || binHigh >= magnitudes.length) {
+                db = -120;
+              } else if (binLow === binHigh) {
+                db = magnitudes[binLow];
+              } else {
+                db = magnitudes[binLow] + (magnitudes[binHigh] - magnitudes[binLow]) * binFrac;
+              }
+
+              // Map dB to X offset from crosshair
+              const xNorm = Math.max(0, Math.min(1, (db - minDb) / dbRange));
+              const xOffset = xNorm * sliceWidth;
+              const lineX = flipLeft ? x - 2 - xOffset : x + 2 + xOffset;
+              points.push({ x: lineX, y: py });
+            }
+
+            // Draw dark outline first
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+
+            // Draw white line on top
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+          }
+        }
       }
     }
 
@@ -392,6 +497,7 @@ export function FrequencySpectrum({
     minFreq,
     maxFreq,
     freqPerBin,
+    sampleRate,
   ]);
 
   // Throttled render with requestAnimationFrame
@@ -545,12 +651,22 @@ export function FrequencySpectrum({
             <Button
               variant="ghost"
               size="xs"
-              className={`rounded-none rounded-r-md border-0 border-l border-input ${
+              className={`rounded-none border-0 border-l border-input ${
                 freqScale === "log" ? "bg-accent text-accent-foreground" : ""
               }`}
               onClick={() => setFreqScale("log")}
             >
               Log
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              className={`rounded-none rounded-r-md border-0 border-l border-input ${
+                freqScale === "mel" ? "bg-accent text-accent-foreground" : ""
+              }`}
+              onClick={() => setFreqScale("mel")}
+            >
+              Mel
             </Button>
           </div>
         </div>

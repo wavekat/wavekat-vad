@@ -24,12 +24,16 @@ mod normalize;
 
 #[cfg(feature = "denoise")]
 mod denoise;
+#[cfg(feature = "denoise")]
+mod resample;
 
 pub use biquad::BiquadFilter;
 pub use normalize::Normalizer;
 
 #[cfg(feature = "denoise")]
 pub use denoise::{Denoiser, DENOISE_SAMPLE_RATE};
+#[cfg(feature = "denoise")]
+pub use resample::AudioResampler;
 
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +53,8 @@ pub struct PreprocessorConfig {
     /// Enable RNNoise-based noise suppression.
     ///
     /// Suppresses stationary background noise while preserving speech.
-    /// Requires the `denoise` feature flag and 48kHz sample rate.
+    /// Requires the `denoise` feature flag. Works at any sample rate
+    /// (automatically resamples to 48kHz internally if needed).
     #[serde(default)]
     pub denoise: bool,
 
@@ -106,7 +111,7 @@ impl PreprocessorConfig {
 /// # Processing Order
 ///
 /// 1. High-pass filter (removes low-frequency noise)
-/// 2. Noise suppression (RNNoise, requires 48kHz)
+/// 2. Noise suppression (RNNoise, resamples internally if not 48kHz)
 /// 3. Normalization (RMS-based amplitude adjustment)
 pub struct Preprocessor {
     high_pass: Option<BiquadFilter>,
@@ -136,23 +141,15 @@ impl Preprocessor {
     /// # Arguments
     /// * `config` - Preprocessing configuration
     /// * `sample_rate` - Audio sample rate in Hz
-    ///
-    /// # Notes
-    ///
-    /// Noise suppression (`denoise: true`) requires 48kHz sample rate.
-    /// If enabled at a different sample rate, it will be silently disabled.
     pub fn new(config: &PreprocessorConfig, sample_rate: u32) -> Self {
         let high_pass = config.high_pass_hz.map(|cutoff| {
             BiquadFilter::highpass_butterworth(cutoff, sample_rate)
         });
 
         #[cfg(feature = "denoise")]
-        let denoiser = if config.denoise && sample_rate == DENOISE_SAMPLE_RATE {
+        let denoiser = if config.denoise {
             Some(Denoiser::new(sample_rate))
         } else {
-            if config.denoise && sample_rate != DENOISE_SAMPLE_RATE {
-                // Silently disable - caller should use 48kHz for denoising
-            }
             None
         };
 
@@ -367,23 +364,24 @@ mod tests {
 
     #[cfg(feature = "denoise")]
     #[test]
-    fn test_preprocessor_denoise_requires_48khz() {
-        // At 16kHz, denoising should be disabled
+    fn test_preprocessor_denoise_works_at_any_rate() {
         let config = PreprocessorConfig {
             denoise: true,
             ..Default::default()
         };
-        let preprocessor = Preprocessor::new(&config, 16000);
-        assert!(!preprocessor.is_denoising());
 
-        // At 48kHz, denoising should be enabled
+        // At 16kHz, denoising should work (with internal resampling)
+        let preprocessor = Preprocessor::new(&config, 16000);
+        assert!(preprocessor.is_denoising());
+
+        // At 48kHz, denoising should work (no resampling needed)
         let preprocessor = Preprocessor::new(&config, 48000);
         assert!(preprocessor.is_denoising());
     }
 
     #[cfg(feature = "denoise")]
     #[test]
-    fn test_preprocessor_denoise() {
+    fn test_preprocessor_denoise_48k() {
         let config = PreprocessorConfig {
             denoise: true,
             ..Default::default()
@@ -399,5 +397,32 @@ mod tests {
 
         // Output length may differ slightly due to frame buffering
         assert!(!output.is_empty());
+    }
+
+    #[cfg(feature = "denoise")]
+    #[test]
+    fn test_preprocessor_denoise_16k() {
+        let config = PreprocessorConfig {
+            denoise: true,
+            ..Default::default()
+        };
+        let mut preprocessor = Preprocessor::new(&config, 16000);
+
+        assert!(preprocessor.is_enabled());
+        assert!(preprocessor.is_denoising());
+
+        // Process enough audio to fill resampling buffers
+        let input: Vec<i16> = vec![0; 2048];
+        let output = preprocessor.process(&input);
+
+        // Due to resampling buffering, we may not get output on first call
+        // but subsequent calls should produce output
+        let input2: Vec<i16> = vec![0; 2048];
+        let output2 = preprocessor.process(&input2);
+
+        assert!(
+            !output.is_empty() || !output2.is_empty(),
+            "Should produce output after enough input"
+        );
     }
 }

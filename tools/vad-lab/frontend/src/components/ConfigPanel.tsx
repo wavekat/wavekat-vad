@@ -48,7 +48,7 @@ export function ConfigPanel({
       ...configs,
       {
         id,
-        label: `${backend}-${nextId}`,
+        label: `config-${nextId}`,
         backend,
         params,
         preprocessing: {},

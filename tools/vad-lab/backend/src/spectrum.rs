@@ -107,11 +107,11 @@ impl SpectrumAnalyzer {
                 .iter()
                 .fold(0.0_f32, |acc, &m| acc.max(m));
 
-            // Convert to dB, clamp to [-80, 0]
+            // Convert to dB, clamp to [-120, 0]
             let db = if max_mag > 0.0 {
-                (20.0 * max_mag.log10()).clamp(-80.0, 0.0)
+                (20.0 * max_mag.log10()).clamp(-120.0, 0.0)
             } else {
-                -80.0
+                -120.0
             };
             output.push(db);
         }
@@ -134,12 +134,12 @@ mod tests {
     fn test_spectrum_analyzer_basic() {
         let mut analyzer = SpectrumAnalyzer::new();
 
-        // Silent input should produce very low magnitudes
+        // Silent input should produce very low magnitudes (at the floor)
         let silent: Vec<i16> = vec![0; 960];
         let spectrum = analyzer.compute(&silent);
         assert_eq!(spectrum.len(), DEFAULT_OUTPUT_BINS);
         for &mag in &spectrum {
-            assert!(mag <= -70.0, "silent input should have low magnitude");
+            assert!(mag <= -110.0, "silent input should have low magnitude");
         }
     }
 

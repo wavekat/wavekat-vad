@@ -1,8 +1,20 @@
 import { useRef, useEffect, useCallback } from "react";
 import { type Viewport, pixelToTime, timeToPixel } from "@/lib/viewport";
 
+interface VadConfig {
+  backend: string;
+  params: Record<string, unknown>;
+  preprocessing?: {
+    high_pass_hz?: number | null;
+    denoise?: boolean;
+    normalize_dbfs?: number | null;
+  };
+}
+
 interface VadTimelineProps {
   label: string;
+  /** Optional config to display backend and parameter info */
+  config?: VadConfig;
   results: Array<{ timestamp_ms: number; probability: number }>;
   totalDurationMs: number;
   viewport: Viewport;
@@ -18,8 +30,35 @@ interface VadTimelineProps {
   playheadMs?: number | null;
 }
 
+/** Build a short summary string for the config */
+function formatConfigSummary(config: VadConfig): string {
+  const parts: string[] = [config.backend];
+
+  // Add key backend params
+  for (const [key, value] of Object.entries(config.params)) {
+    if (value != null && value !== "") {
+      // For mode params, just show the first part (e.g., "0 - quality" -> "mode:0")
+      const displayValue = typeof value === "string" && value.includes(" - ")
+        ? value.split(" - ")[0]
+        : String(value);
+      parts.push(`${key}:${displayValue}`);
+    }
+  }
+
+  // Add preprocessing if enabled
+  const pp = config.preprocessing;
+  if (pp) {
+    if (pp.high_pass_hz != null) parts.push(`hp:${pp.high_pass_hz}Hz`);
+    if (pp.denoise) parts.push("denoise");
+    if (pp.normalize_dbfs != null) parts.push(`norm:${pp.normalize_dbfs}dB`);
+  }
+
+  return parts.join(" | ");
+}
+
 export function VadTimeline({
   label,
+  config,
   results,
   totalDurationMs,
   viewport,
@@ -93,14 +132,29 @@ export function VadTimeline({
     const viewEndMs = effectiveViewport.viewStartMs + effectiveViewport.viewDurationMs;
 
     // Draw speech probability as filled bars
-    for (const result of results) {
+    // Results are sorted by timestamp, so we can calculate width based on next result
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
       // Skip results outside viewport (effectiveViewport.viewStartMs can be negative)
-      if (result.timestamp_ms < effectiveViewport.viewStartMs - 50) continue;
-      if (result.timestamp_ms > viewEndMs + 50) continue;
+      if (result.timestamp_ms < effectiveViewport.viewStartMs - 100) continue;
+      if (result.timestamp_ms > viewEndMs + 100) continue;
 
       const x = timeToPixel(result.timestamp_ms, width, effectiveViewport);
-      // Calculate bar width based on typical 20ms frame interval
-      const barWidth = Math.max(1, (20 / effectiveViewport.viewDurationMs) * width);
+
+      // Calculate bar width based on the time to the next result
+      // This ensures bars fill the space without gaps
+      let frameDurationMs: number;
+      if (i < results.length - 1) {
+        frameDurationMs = results[i + 1].timestamp_ms - result.timestamp_ms;
+      } else if (i > 0) {
+        // For the last result, use the previous interval
+        frameDurationMs = result.timestamp_ms - results[i - 1].timestamp_ms;
+      } else {
+        // Single result, use a default
+        frameDurationMs = 30;
+      }
+
+      const barWidth = Math.max(1, (frameDurationMs / effectiveViewport.viewDurationMs) * width);
       const barHeight = result.probability * height;
 
       ctx.fillStyle = color;
@@ -193,7 +247,14 @@ export function VadTimeline({
 
   return (
     <div className={className}>
-      <div className="text-xs text-muted-foreground mb-1 font-mono">{label}</div>
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className="text-xs font-medium font-mono">{label}</span>
+        {config && (
+          <span className="text-xs text-muted-foreground font-mono">
+            {formatConfigSummary(config)}
+          </span>
+        )}
+      </div>
       <div
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}

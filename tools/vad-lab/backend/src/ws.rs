@@ -98,7 +98,8 @@ pub async fn handle_ws(socket: WebSocket) {
     let mut stop_tx: Option<tokio::sync::oneshot::Sender<()>> = None;
     let mut spectrum_bins: usize = DEFAULT_OUTPUT_BINS;
 
-    let frame_duration_ms: u32 = 20;
+    // Use small frames (10ms); FrameAdapter handles buffering to each backend's requirements
+    let frame_duration_ms: u32 = 10;
 
     while let Some(Ok(msg)) = ws_rx.next().await {
         let Message::Text(text) = msg else {

@@ -47,6 +47,8 @@ interface FrequencySpectrumProps {
   bins?: number;
   /** Callback when bins setting changes */
   onBinsChange?: (bins: number) => void;
+  /** Current playhead position in milliseconds (for playback) */
+  playheadMs?: number | null;
 }
 
 type FreqScale = "linear" | "log";
@@ -140,6 +142,7 @@ export function FrequencySpectrum({
   recording = false,
   bins = 64,
   onBinsChange,
+  playheadMs,
 }: FrequencySpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,6 +177,7 @@ export function FrequencySpectrum({
     freqScale: FreqScale;
     gain: number;
     hoverTimeMs: number | null;
+    playheadMs: number | null;
   } | null>(null);
 
   const render = useCallback(() => {
@@ -350,6 +354,30 @@ export function FrequencySpectrum({
         ctx.fillText(timeStr, labelX, 12);
       }
     }
+
+    // Draw playhead
+    if (playheadMs != null && totalDurationMs > 0) {
+      const x = timeToPixel(playheadMs, width, effectiveViewport);
+
+      if (x >= 0 && x <= width) {
+        // Playhead line (bright blue)
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+
+        // Playhead triangle at top
+        ctx.fillStyle = "#3b82f6";
+        ctx.beginPath();
+        ctx.moveTo(x - 6, 0);
+        ctx.lineTo(x + 6, 0);
+        ctx.lineTo(x, 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
   }, [
     spectrumData,
     width,
@@ -359,6 +387,7 @@ export function FrequencySpectrum({
     minDb,
     maxDb,
     hoverTimeMs,
+    playheadMs,
     totalDurationMs,
     minFreq,
     maxFreq,
@@ -374,6 +403,7 @@ export function FrequencySpectrum({
       freqScale,
       gain,
       hoverTimeMs: hoverTimeMs ?? null,
+      playheadMs: playheadMs ?? null,
     };
 
     const lastRender = lastRenderRef.current;
@@ -384,7 +414,8 @@ export function FrequencySpectrum({
       lastRender.viewDurationMs === currentState.viewDurationMs &&
       lastRender.gain === currentState.gain &&
       lastRender.freqScale === currentState.freqScale &&
-      lastRender.hoverTimeMs === currentState.hoverTimeMs
+      lastRender.hoverTimeMs === currentState.hoverTimeMs &&
+      lastRender.playheadMs === currentState.playheadMs
     ) {
       return;
     }
@@ -412,6 +443,7 @@ export function FrequencySpectrum({
     freqScale,
     gain,
     hoverTimeMs,
+    playheadMs,
     render,
   ]);
 

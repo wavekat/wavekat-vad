@@ -345,6 +345,7 @@ function App() {
           recording={recording}
           bins={spectrumBins}
           onBinsChange={handleSpectrumBinsChange}
+          playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
         />
 
         {/* VAD Timelines */}
@@ -364,6 +365,7 @@ function App() {
             hoverTimeMs={hoverTimeMs}
             onHoverTimeChange={setHoverTimeMs}
             recording={recording}
+            playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
           />
         ))}
       </div>

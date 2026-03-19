@@ -366,7 +366,7 @@ export function FrequencySpectrum({
       }
     }
 
-    // Draw hover crosshair
+    // Draw hover crosshair and dB slice line
     if (hoverTimeMs != null && totalDurationMs > 0) {
       const x = timeToPixel(hoverTimeMs, width, effectiveViewport);
 
@@ -384,6 +384,79 @@ export function FrequencySpectrum({
         const textWidth = ctx.measureText(timeStr).width;
         const labelX = x + 4 > width - textWidth - 4 ? x - textWidth - 4 : x + 4;
         ctx.fillText(timeStr, labelX, 12);
+
+        // Draw dB slice line next to crosshair
+        if (spectrumData.length > 0) {
+          // Find closest frame
+          let closestFrame = sortedFrames[0];
+          let minDiff = Math.abs(sortedFrames[0].timestamp_ms - hoverTimeMs);
+          for (const frame of sortedFrames) {
+            const diff = Math.abs(frame.timestamp_ms - hoverTimeMs);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestFrame = frame;
+            }
+          }
+
+          if (closestFrame) {
+            const magnitudes = closestFrame.magnitudes;
+            const numBinsLocal = magnitudes.length;
+            const freqPerBinLocal = sampleRate / (numBinsLocal * 2);
+            const dbRange = maxDb - minDb;
+            const sliceWidth = 60; // Width of the dB slice visualization
+            const flipLeft = x + sliceWidth + 4 > width;
+
+            // Build the path points
+            const points: { x: number; y: number }[] = [];
+            for (let py = 0; py < height; py++) {
+              const yNorm = 1 - py / height;
+
+              let freq: number;
+              if (freqScale === "log") {
+                freq = logPositionToFreq(yNorm, minFreq, maxFreq);
+              } else if (freqScale === "mel") {
+                freq = melPositionToFreq(yNorm, minFreq, maxFreq);
+              } else {
+                freq = yNorm * maxFreq;
+              }
+
+              // Get magnitude with interpolation
+              const binFloat = freq / freqPerBinLocal;
+              const binLow = Math.floor(binFloat);
+              const binHigh = Math.ceil(binFloat);
+              const binFrac = binFloat - binLow;
+
+              let db: number;
+              if (binLow < 0 || binHigh >= magnitudes.length) {
+                db = minDb;
+              } else if (binLow === binHigh) {
+                db = magnitudes[binLow];
+              } else {
+                db = magnitudes[binLow] + (magnitudes[binHigh] - magnitudes[binLow]) * binFrac;
+              }
+
+              // Map dB to X offset from crosshair
+              const xNorm = Math.max(0, Math.min(1, (db - minDb) / dbRange));
+              const xOffset = xNorm * sliceWidth;
+              const lineX = flipLeft ? x - 2 - xOffset : x + 2 + xOffset;
+              points.push({ x: lineX, y: py });
+            }
+
+            // Draw dark outline first
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+
+            // Draw white line on top
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+          }
+        }
       }
     }
 
@@ -424,6 +497,7 @@ export function FrequencySpectrum({
     minFreq,
     maxFreq,
     freqPerBin,
+    sampleRate,
   ]);
 
   // Throttled render with requestAnimationFrame

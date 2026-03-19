@@ -199,26 +199,26 @@ Keep the crate lightweight by default. Users opt in to heavier preprocessing.
 ## Implementation Order
 
 ### Phase 1: High-Pass Filter + Library Foundation
-- [ ] Create `crates/wavekat-vad/src/preprocessing/mod.rs`
-- [ ] Create `crates/wavekat-vad/src/preprocessing/biquad.rs`
-- [ ] Implement `BiquadFilter` (second-order Butterworth high-pass)
-- [ ] Implement `PreprocessorConfig` with serde support
-- [ ] Implement `Preprocessor` struct
-- [ ] Export from `lib.rs`
-- [ ] Unit tests: verify frequency response, passthrough when disabled
+- [x] Create `crates/wavekat-vad/src/preprocessing/mod.rs`
+- [x] Create `crates/wavekat-vad/src/preprocessing/biquad.rs`
+- [x] Implement `BiquadFilter` (second-order Butterworth high-pass)
+- [x] Implement `PreprocessorConfig` with serde support
+- [x] Implement `Preprocessor` struct
+- [x] Export from `lib.rs`
+- [x] Unit tests: verify frequency response, passthrough when disabled
 
 ### Phase 2: vad-lab Pipeline Integration
-- [ ] Update `VadConfig` in `session.rs` to include `preprocessing` field
-- [ ] Update `PipelineResult` to include `preprocessed_samples`
-- [ ] Update `pipeline.rs` to create `Preprocessor` per config
-- [ ] Update `pipeline.rs` to apply preprocessing before VAD
-- [ ] Update `available_backends()` or add `preprocessing_params()` for frontend
+- [x] Update `VadConfig` in `session.rs` to include `preprocessing` field
+- [x] Update `PipelineResult` to include `preprocessed_samples`
+- [x] Update `pipeline.rs` to create `Preprocessor` per config
+- [x] Update `pipeline.rs` to apply preprocessing before VAD
+- [x] Update `available_backends()` or add `preprocessing_params()` for frontend
 
 ### Phase 3: WebSocket + Visualization
-- [ ] Add `PreprocessedAudio` and `PreprocessedSpectrum` to `ServerMessage`
-- [ ] Update `ws.rs` to compute spectrum per-config and send to frontend
-- [ ] Update frontend `websocket.ts` types
-- [ ] Update `ConfigPanel.tsx` to show preprocessing options
+- [x] Add `PreprocessedAudio` and `PreprocessedSpectrum` to `ServerMessage`
+- [x] Update `ws.rs` to compute spectrum per-config and send to frontend
+- [x] Update frontend `websocket.ts` types
+- [x] Update `ConfigPanel.tsx` to show preprocessing options
 - [ ] Update visualization components to show per-config waveform/spectrum
 
 ### Phase 4: Noise Suppression (Optional)

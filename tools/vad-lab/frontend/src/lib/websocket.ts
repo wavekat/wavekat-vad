@@ -3,11 +3,18 @@ export interface AudioDevice {
   name: string;
 }
 
+export interface PreprocessorConfig {
+  high_pass_hz?: number | null;
+  denoise?: boolean;
+  normalize_dbfs?: number | null;
+}
+
 export interface VadConfig {
   id: string;
   label: string;
   backend: string;
   params: Record<string, unknown>;
+  preprocessing?: PreprocessorConfig;
 }
 
 export interface ParamInfo {
@@ -20,10 +27,12 @@ export interface ParamInfo {
 // Server -> Client messages
 export type ServerMessage =
   | { type: "devices"; devices: AudioDevice[] }
-  | { type: "backends"; backends: Record<string, ParamInfo[]> }
+  | { type: "backends"; backends: Record<string, ParamInfo[]>; preprocessing_params: ParamInfo[] }
   | { type: "recording_started"; sample_rate: number; spectrum_bins: number }
   | { type: "audio"; timestamp_ms: number; samples: number[] }
   | { type: "spectrum"; timestamp_ms: number; magnitudes: number[] }
+  | { type: "preprocessed_audio"; config_id: string; timestamp_ms: number; samples: number[] }
+  | { type: "preprocessed_spectrum"; config_id: string; timestamp_ms: number; magnitudes: number[] }
   | { type: "vad"; config_id: string; timestamp_ms: number; probability: number }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -61,6 +70,8 @@ interface StreamBatch {
   audioMinMs: number;
   audioMaxMs: number;
   spectrumFrames: number;
+  preprocessedAudioFrames: Map<string, number>;
+  preprocessedSpectrumFrames: Map<string, number>;
   vad: Map<string, { count: number; minP: number; maxP: number; sumP: number }>;
 }
 
@@ -203,7 +214,8 @@ export class VadLabSocket {
   }
 
   private logServerMessage(msg: ServerMessage) {
-    if (msg.type === "audio" || msg.type === "vad" || msg.type === "spectrum") {
+    if (msg.type === "audio" || msg.type === "vad" || msg.type === "spectrum" ||
+        msg.type === "preprocessed_audio" || msg.type === "preprocessed_spectrum") {
       this.addToBatch(msg);
     } else {
       // Flush any pending batch before logging a non-streaming message
@@ -212,13 +224,15 @@ export class VadLabSocket {
     }
   }
 
-  private addToBatch(msg: ServerMessage & { type: "audio" | "vad" | "spectrum" }) {
+  private addToBatch(msg: ServerMessage & { type: "audio" | "vad" | "spectrum" | "preprocessed_audio" | "preprocessed_spectrum" }) {
     if (!this.streamBatch) {
       this.streamBatch = {
         audioFrames: 0,
         audioMinMs: Infinity,
         audioMaxMs: -Infinity,
         spectrumFrames: 0,
+        preprocessedAudioFrames: new Map(),
+        preprocessedSpectrumFrames: new Map(),
         vad: new Map(),
       };
       this.startBatchTimer();
@@ -231,6 +245,16 @@ export class VadLabSocket {
       batch.audioMaxMs = Math.max(batch.audioMaxMs, msg.timestamp_ms);
     } else if (msg.type === "spectrum") {
       batch.spectrumFrames++;
+    } else if (msg.type === "preprocessed_audio") {
+      batch.preprocessedAudioFrames.set(
+        msg.config_id,
+        (batch.preprocessedAudioFrames.get(msg.config_id) ?? 0) + 1
+      );
+    } else if (msg.type === "preprocessed_spectrum") {
+      batch.preprocessedSpectrumFrames.set(
+        msg.config_id,
+        (batch.preprocessedSpectrumFrames.get(msg.config_id) ?? 0) + 1
+      );
     } else {
       const existing = batch.vad.get(msg.config_id);
       if (existing) {
@@ -282,6 +306,19 @@ export class VadLabSocket {
       parts.push(`spectrum: ${batch.spectrumFrames} frames`);
     }
 
+    // Summarize preprocessed frames per config
+    const preprocessedConfigs = new Set([
+      ...batch.preprocessedAudioFrames.keys(),
+      ...batch.preprocessedSpectrumFrames.keys(),
+    ]);
+    for (const configId of preprocessedConfigs) {
+      const audioCount = batch.preprocessedAudioFrames.get(configId) ?? 0;
+      const spectrumCount = batch.preprocessedSpectrumFrames.get(configId) ?? 0;
+      if (audioCount > 0 || spectrumCount > 0) {
+        parts.push(`preprocessed [${configId}]: ${audioCount} audio, ${spectrumCount} spectrum`);
+      }
+    }
+
     for (const [configId, stats] of batch.vad) {
       const avg = stats.sumP / stats.count;
       if (stats.minP === stats.maxP) {
@@ -302,10 +339,12 @@ export class VadLabSocket {
 function summarizeServer(msg: ServerMessage): string {
   switch (msg.type) {
     case "devices": return `devices (${msg.devices.length})`;
-    case "backends": return `backends (${Object.keys(msg.backends).length})`;
+    case "backends": return `backends (${Object.keys(msg.backends).length}, ${msg.preprocessing_params.length} preprocessing)`;
     case "recording_started": return `recording_started (${msg.sample_rate} Hz, ${msg.spectrum_bins} bins)`;
     case "audio": return `audio t=${msg.timestamp_ms.toFixed(0)}ms`;
     case "spectrum": return `spectrum t=${msg.timestamp_ms.toFixed(0)}ms`;
+    case "preprocessed_audio": return `preprocessed_audio [${msg.config_id}] t=${msg.timestamp_ms.toFixed(0)}ms`;
+    case "preprocessed_spectrum": return `preprocessed_spectrum [${msg.config_id}] t=${msg.timestamp_ms.toFixed(0)}ms`;
     case "vad": return `vad [${msg.config_id}] t=${msg.timestamp_ms.toFixed(0)}ms p=${msg.probability.toFixed(2)}`;
     case "done": return "done";
     case "error": return `error: ${msg.message}`;

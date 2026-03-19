@@ -42,6 +42,7 @@ function App() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
+  const [preprocessingParams, setPreprocessingParams] = useState<ParamInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [recording, setRecording] = useState(false);
   const [configs, setConfigs] = useState<VadConfig[]>([]);
@@ -108,6 +109,7 @@ function App() {
 
       case "backends":
         setBackends(msg.backends);
+        setPreprocessingParams(msg.preprocessing_params);
         break;
 
       case "recording_started":
@@ -375,7 +377,12 @@ function App() {
       <Separator />
 
       {/* Config Panel */}
-      <ConfigPanel configs={configs} backends={backends} onConfigsChange={setConfigs} />
+      <ConfigPanel
+        configs={configs}
+        backends={backends}
+        preprocessingParams={preprocessingParams}
+        onConfigsChange={setConfigs}
+      />
 
       <Separator />
 

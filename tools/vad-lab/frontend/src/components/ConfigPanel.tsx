@@ -10,15 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { VadConfig, ParamInfo } from "@/lib/websocket";
+import type { VadConfig, ParamInfo, PreprocessorConfig } from "@/lib/websocket";
 
 interface ConfigPanelProps {
   configs: VadConfig[];
   backends: Record<string, ParamInfo[]>;
+  preprocessingParams: ParamInfo[];
   onConfigsChange: (configs: VadConfig[]) => void;
 }
 
-export function ConfigPanel({ configs, backends, onConfigsChange }: ConfigPanelProps) {
+export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsChange }: ConfigPanelProps) {
   const [nextId, setNextId] = useState(1);
 
   const addConfig = () => {
@@ -41,6 +42,7 @@ export function ConfigPanel({ configs, backends, onConfigsChange }: ConfigPanelP
         label: `${backend}-${nextId}`,
         backend,
         params,
+        preprocessing: {},
       },
     ]);
   };
@@ -78,6 +80,24 @@ export function ConfigPanel({ configs, backends, onConfigsChange }: ConfigPanelP
     );
   };
 
+  const updatePreprocessing = (configId: string, updates: Partial<PreprocessorConfig>) => {
+    onConfigsChange(
+      configs.map((c) => {
+        if (c.id !== configId) return c;
+        return {
+          ...c,
+          preprocessing: { ...c.preprocessing, ...updates },
+        };
+      })
+    );
+  };
+
+  // Get high-pass param info for range limits
+  const highPassParam = preprocessingParams.find((p) => p.name === "high_pass_hz");
+  const highPassRange = highPassParam?.param_type.type === "Float"
+    ? highPassParam.param_type.options
+    : { min: 20, max: 500 };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -88,72 +108,123 @@ export function ConfigPanel({ configs, backends, onConfigsChange }: ConfigPanelP
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {configs.map((config) => (
-          <Card key={config.id} className="relative">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">
-                  <Input
-                    className="bg-transparent border-none shadow-none outline-none h-auto p-0 text-sm font-semibold"
-                    value={config.label}
-                    onChange={(e) => updateConfig(config.id, { label: e.target.value })}
-                  />
-                </CardTitle>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 p-0 text-muted-foreground"
-                  onClick={() => removeConfig(config.id)}
-                >
-                  x
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Backend</Label>
-                <Select
-                  value={config.backend}
-                  onValueChange={(v) => { if (v) updateConfig(config.id, { backend: v }); }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.keys(backends).map((b) => (
-                      <SelectItem key={b} value={b}>
-                        {b}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        {configs.map((config) => {
+          const highPassEnabled = config.preprocessing?.high_pass_hz != null;
+          const highPassValue = config.preprocessing?.high_pass_hz ?? 80;
 
-              {(backends[config.backend] ?? []).map((param) => (
-                <div key={param.name} className="space-y-1">
-                  <Label className="text-xs">{param.description}</Label>
-                  {param.param_type.type === "Select" && (
-                    <Select
-                      value={String(config.params[param.name] ?? param.default)}
-                      onValueChange={(v) => { if (v) updateParam(config.id, param.name, v); }}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {param.param_type.options.map((opt) => (
-                          <SelectItem key={opt} value={opt}>
-                            {opt}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+          return (
+            <Card key={config.id} className="relative">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">
+                    <Input
+                      className="bg-transparent border-none shadow-none outline-none h-auto p-0 text-sm font-semibold"
+                      value={config.label}
+                      onChange={(e) => updateConfig(config.id, { label: e.target.value })}
+                    />
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-muted-foreground"
+                    onClick={() => removeConfig(config.id)}
+                  >
+                    x
+                  </Button>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Backend Selection */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Backend</Label>
+                  <Select
+                    value={config.backend}
+                    onValueChange={(v) => { if (v) updateConfig(config.id, { backend: v }); }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(backends).map((b) => (
+                        <SelectItem key={b} value={b}>
+                          {b}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Backend-specific params */}
+                {(backends[config.backend] ?? []).map((param) => (
+                  <div key={param.name} className="space-y-1">
+                    <Label className="text-xs">{param.description}</Label>
+                    {param.param_type.type === "Select" && (
+                      <Select
+                        value={String(config.params[param.name] ?? param.default)}
+                        onValueChange={(v) => { if (v) updateParam(config.id, param.name, v); }}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {param.param_type.options.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                ))}
+
+                {/* Preprocessing Section */}
+                <div className="border-t pt-3 mt-3">
+                  <Label className="text-xs text-muted-foreground mb-2 block">Preprocessing</Label>
+
+                  {/* High-pass filter */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`highpass-${config.id}`}
+                        checked={highPassEnabled}
+                        onChange={(e) => {
+                          updatePreprocessing(config.id, {
+                            high_pass_hz: e.target.checked ? 80 : null,
+                          });
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <Label htmlFor={`highpass-${config.id}`} className="text-xs cursor-pointer">
+                        High-pass filter
+                      </Label>
+                    </div>
+                    {highPassEnabled && (
+                      <div className="flex items-center gap-2 ml-6">
+                        <Input
+                          type="number"
+                          min={highPassRange.min}
+                          max={highPassRange.max}
+                          step={10}
+                          value={highPassValue}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val)) {
+                              updatePreprocessing(config.id, { high_pass_hz: val });
+                            }
+                          }}
+                          className="h-7 text-xs w-20"
+                        />
+                        <span className="text-xs text-muted-foreground">Hz</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

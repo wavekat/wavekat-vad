@@ -24,6 +24,7 @@
 pub mod backends;
 pub mod error;
 pub mod frame;
+pub mod preprocessing;
 
 pub use error::VadError;
 

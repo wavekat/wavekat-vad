@@ -51,6 +51,22 @@ export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsC
     onConfigsChange(configs.filter((c) => c.id !== id));
   };
 
+  const cloneConfig = (config: VadConfig) => {
+    const id = `config-${nextId}`;
+    setNextId((n) => n + 1);
+
+    onConfigsChange([
+      ...configs,
+      {
+        ...config,
+        id,
+        label: `${config.label} (copy)`,
+        params: { ...config.params },
+        preprocessing: { ...config.preprocessing },
+      },
+    ]);
+  };
+
   const updateConfig = (id: string, updates: Partial<VadConfig>) => {
     onConfigsChange(
       configs.map((c) => {
@@ -123,14 +139,26 @@ export function ConfigPanel({ configs, backends, preprocessingParams, onConfigsC
                       onChange={(e) => updateConfig(config.id, { label: e.target.value })}
                     />
                   </CardTitle>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 w-6 p-0 text-muted-foreground"
-                    onClick={() => removeConfig(config.id)}
-                  >
-                    x
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-muted-foreground"
+                      title="Clone config"
+                      onClick={() => cloneConfig(config)}
+                    >
+                      ⧉
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-muted-foreground"
+                      title="Remove config"
+                      onClick={() => removeConfig(config.id)}
+                    >
+                      ×
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">

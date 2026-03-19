@@ -32,7 +32,7 @@ export type ServerMessage =
 export type ClientMessage =
   | { type: "list_devices" }
   | { type: "list_backends" }
-  | { type: "start_recording"; device_index: number }
+  | { type: "start_recording"; device_index: number; max_duration_secs?: number }
   | { type: "stop_recording" }
   | { type: "load_file"; path: string }
   | { type: "set_configs"; configs: VadConfig[] }

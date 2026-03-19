@@ -32,6 +32,7 @@ import {
 
 const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 const MAX_LOG_ENTRIES = 500;
+const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
 
 function App() {
   const socketRef = useRef<VadLabSocket | null>(null);
@@ -204,6 +205,7 @@ function App() {
     socket.send({
       type: "start_recording",
       device_index: parseInt(selectedDevice),
+      max_duration_secs: MAX_RECORDING_DURATION_SECS,
     });
     recordingRef.current = true;
     setRecording(true);

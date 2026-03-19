@@ -8,6 +8,11 @@ use crate::pipeline;
 use crate::session::VadConfig;
 use crate::spectrum::{SpectrumAnalyzer, DEFAULT_OUTPUT_BINS};
 
+/// Default maximum recording duration: 2 minutes.
+fn default_max_duration_secs() -> u64 {
+    120
+}
+
 /// Messages sent from the client to the server.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -16,6 +21,9 @@ pub enum ClientMessage {
     ListBackends,
     StartRecording {
         device_index: usize,
+        /// Maximum recording duration in seconds. Defaults to 120 (2 minutes).
+        #[serde(default = "default_max_duration_secs")]
+        max_duration_secs: u64,
     },
     StopRecording,
     LoadFile {
@@ -132,7 +140,10 @@ pub async fn handle_ws(socket: WebSocket) {
                 }
             }
 
-            ClientMessage::StartRecording { device_index } => {
+            ClientMessage::StartRecording {
+                device_index,
+                max_duration_secs,
+            } => {
                 // Stop any existing capture
                 if let Some(tx) = stop_tx.take() {
                     let _ = tx.send(());
@@ -206,6 +217,11 @@ pub async fn handle_ws(socket: WebSocket) {
                         });
 
                         // Stream messages to the client until stop
+                        // Maximum recording duration (configurable, default 2 minutes)
+                        let max_duration =
+                            tokio::time::sleep(std::time::Duration::from_secs(max_duration_secs));
+                        tokio::pin!(max_duration);
+
                         loop {
                             tokio::select! {
                                 Some(msg) = msg_rx.recv() => {
@@ -227,6 +243,18 @@ pub async fn handle_ws(socket: WebSocket) {
                                         None | Some(Err(_)) => break, // client disconnected
                                         _ => {}
                                     }
+                                }
+                                () = &mut max_duration => {
+                                    // Auto-stop after configured duration
+                                    if let Some(tx) = stop_tx.take() {
+                                        let _ = tx.send(());
+                                    }
+                                    tracing::info!(
+                                        duration_secs = max_duration_secs,
+                                        "recording auto-stopped after max duration"
+                                    );
+                                    let _ = ws_tx.send(send_msg(&ServerMessage::Done)).await;
+                                    break;
                                 }
                             }
                         }

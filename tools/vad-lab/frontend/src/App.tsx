@@ -57,7 +57,7 @@ function App() {
   const [logsOpen, setLogsOpen] = useState(true);
   const [hoverTimeMs, setHoverTimeMs] = useState<number | null>(null);
   const [viewport, setViewport] = useState<Viewport>(createDefaultViewport);
-  const [spectrumBins, setSpectrumBins] = useState(64);
+  const [spectrumBins, setSpectrumBins] = useState(256);
 
   const connected = connectionState === "connected";
 

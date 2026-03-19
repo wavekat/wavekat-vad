@@ -8,14 +8,18 @@ const FFT_SIZE: usize = 1024;
 /// Number of raw FFT bins (half of FFT_SIZE, positive frequencies only).
 const RAW_BINS: usize = FFT_SIZE / 2;
 
-/// Default number of output bins (optimized for ~120px display height).
-pub const DEFAULT_OUTPUT_BINS: usize = 64;
+/// Default number of output bins for smooth spectrogram display.
+pub const DEFAULT_OUTPUT_BINS: usize = 256;
 
 /// Computes the magnitude spectrum of audio samples.
 ///
 /// Internally uses a 1024-point FFT for good frequency resolution,
 /// then aggregates into configurable output bins for efficient transmission.
 /// Magnitudes are in dB scale (20 * log10(magnitude)), clamped to [-80, 0] dB.
+///
+/// Note: Bins are always linearly distributed. For log frequency display,
+/// the frontend should handle the Y-axis scaling - this gives more screen
+/// space to lower frequencies without reducing their energy values.
 pub struct SpectrumAnalyzer {
     planner: FftPlanner<f32>,
     buffer: Vec<Complex<f32>>,
@@ -25,7 +29,7 @@ pub struct SpectrumAnalyzer {
 }
 
 impl SpectrumAnalyzer {
-    /// Create a new spectrum analyzer with the default number of output bins (64).
+    /// Create a new spectrum analyzer with the default settings (64 bins).
     pub fn new() -> Self {
         Self::with_bins(DEFAULT_OUTPUT_BINS)
     }
@@ -33,7 +37,7 @@ impl SpectrumAnalyzer {
     /// Create a new spectrum analyzer with a custom number of output bins.
     ///
     /// `output_bins` should be a power of 2 and divide evenly into 512.
-    /// Common values: 32, 64, 128, 256.
+    /// Common values: 32, 64, 128, 256, 512.
     pub fn with_bins(output_bins: usize) -> Self {
         // Hann window for smoother spectral analysis
         let window: Vec<f32> = (0..FFT_SIZE)
@@ -91,7 +95,7 @@ impl SpectrumAnalyzer {
             self.raw_magnitudes[i] = magnitude;
         }
 
-        // Aggregate into output bins (take max within each range for peak detection)
+        // Aggregate into output bins (linear distribution, take max for peak detection)
         let bins_per_output = RAW_BINS / self.output_bins;
         let mut output = Vec::with_capacity(self.output_bins);
 
@@ -105,11 +109,11 @@ impl SpectrumAnalyzer {
 
             // Convert to dB, clamp to [-80, 0]
             let db = if max_mag > 0.0 {
-                20.0 * max_mag.log10()
+                (20.0 * max_mag.log10()).clamp(-80.0, 0.0)
             } else {
                 -80.0
             };
-            output.push(db.clamp(-80.0, 0.0));
+            output.push(db);
         }
 
         output

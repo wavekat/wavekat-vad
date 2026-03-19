@@ -58,34 +58,48 @@ function freqToLogPosition(freq: number, minFreq: number, maxFreq: number): numb
   return Math.log(freq / minFreq) / Math.log(maxFreq / minFreq);
 }
 
-/** Map dB value (-80 to 0) to a color */
-function dbToColor(db: number): string {
+/** Map dB value (-80 to 0) to RGB color components */
+function dbToRgb(db: number): [number, number, number] {
   // Normalize to 0-1
   const normalized = (db + 80) / 80;
   const clamped = Math.max(0, Math.min(1, normalized));
 
-  // Color gradient: dark blue -> blue -> cyan -> green -> yellow -> red
-  if (clamped < 0.2) {
-    // Dark blue to blue
-    const t = clamped / 0.2;
-    return `rgb(0, 0, ${Math.round(50 + t * 155)})`;
-  } else if (clamped < 0.4) {
-    // Blue to cyan
-    const t = (clamped - 0.2) / 0.2;
-    return `rgb(0, ${Math.round(t * 255)}, ${Math.round(205 + t * 50)})`;
-  } else if (clamped < 0.6) {
-    // Cyan to green
-    const t = (clamped - 0.4) / 0.2;
-    return `rgb(0, 255, ${Math.round(255 * (1 - t))})`;
-  } else if (clamped < 0.8) {
-    // Green to yellow
-    const t = (clamped - 0.6) / 0.2;
-    return `rgb(${Math.round(t * 255)}, 255, 0)`;
+  // Inferno-like colormap: black -> purple -> orange -> yellow -> white
+  // This matches Audacity's default colormap better
+  if (clamped < 0.25) {
+    const t = clamped / 0.25;
+    return [
+      Math.round(t * 80),
+      Math.round(t * 20),
+      Math.round(t * 100),
+    ];
+  } else if (clamped < 0.5) {
+    const t = (clamped - 0.25) / 0.25;
+    return [
+      Math.round(80 + t * 120),
+      Math.round(20 + t * 30),
+      Math.round(100 - t * 50),
+    ];
+  } else if (clamped < 0.75) {
+    const t = (clamped - 0.5) / 0.25;
+    return [
+      Math.round(200 + t * 55),
+      Math.round(50 + t * 150),
+      Math.round(50 - t * 50),
+    ];
   } else {
-    // Yellow to red
-    const t = (clamped - 0.8) / 0.2;
-    return `rgb(255, ${Math.round(255 * (1 - t))}, 0)`;
+    const t = (clamped - 0.75) / 0.25;
+    return [
+      255,
+      Math.round(200 + t * 55),
+      Math.round(t * 200),
+    ];
   }
+}
+
+/** Convert log position (0-1) to frequency */
+function logPositionToFreq(pos: number, minFreq: number, maxFreq: number): number {
+  return minFreq * Math.pow(maxFreq / minFreq, pos);
 }
 
 const BINS_OPTIONS = [32, 64, 128, 256, 512];
@@ -142,21 +156,16 @@ export function FrequencySpectrum({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-
-    // Resize canvas if needed
-    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      ctx.scale(dpr, dpr);
-    } else {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Use 1:1 pixel mapping for crisp image rendering
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
     }
 
     ctx.clearRect(0, 0, width, height);
 
-    // Dark background for better color contrast
-    ctx.fillStyle = "#1a1a2e";
+    // Dark background
+    ctx.fillStyle = "#0d0d1a";
     ctx.fillRect(0, 0, width, height);
 
     if (spectrumData.length === 0) {
@@ -167,50 +176,79 @@ export function FrequencySpectrum({
       return;
     }
 
-    // Find visible spectrum frames
-    const visibleFrames = spectrumData.filter(
-      (frame) =>
-        frame.timestamp_ms >= effectiveViewport.viewStartMs - 50 &&
-        frame.timestamp_ms <= effectiveViewport.viewStartMs + effectiveViewport.viewDurationMs + 50
-    );
+    // Sort frames by timestamp for binary search
+    const sortedFrames = [...spectrumData].sort((a, b) => a.timestamp_ms - b.timestamp_ms);
 
-    // Frame duration (assume 20ms per frame)
-    const frameDurationMs = 20;
-    const frameWidth = Math.max(1, (frameDurationMs / effectiveViewport.viewDurationMs) * width);
+    // Create ImageData for pixel-by-pixel rendering
+    const imageData = ctx.createImageData(width, height);
+    const pixels = imageData.data;
 
-    // Draw each visible frame as a vertical column
-    for (const frame of visibleFrames) {
-      const x = timeToPixel(frame.timestamp_ms, width, effectiveViewport);
+    // For each pixel, sample the spectrum with interpolation
+    for (let px = 0; px < width; px++) {
+      // Map pixel X to time
+      const timeMs = pixelToTime(px, width, effectiveViewport);
 
-      if (x < -frameWidth || x > width + frameWidth) continue;
-
-      // Draw each frequency bin as a horizontal stripe
-      for (let binIdx = 0; binIdx < frame.magnitudes.length; binIdx++) {
-        const freq = binIdx * freqPerBin;
-        if (freq < minFreq || freq > maxFreq) continue;
-
-        let yNorm: number;
-        if (freqScale === "log") {
-          yNorm = freqToLogPosition(freq, minFreq, maxFreq);
+      // Find the closest frame(s) for interpolation
+      let frameIdx = 0;
+      for (let i = 0; i < sortedFrames.length; i++) {
+        if (sortedFrames[i].timestamp_ms <= timeMs) {
+          frameIdx = i;
         } else {
-          yNorm = freq / maxFreq;
+          break;
+        }
+      }
+
+      // Get the frame (or interpolate between two)
+      const frame = sortedFrames[frameIdx];
+      if (!frame) continue;
+
+      for (let py = 0; py < height; py++) {
+        // Map pixel Y to frequency (Y is inverted: 0 = top = high freq)
+        const yNorm = 1 - py / height;
+
+        let freq: number;
+        if (freqScale === "log") {
+          freq = logPositionToFreq(yNorm, minFreq, maxFreq);
+        } else {
+          freq = yNorm * maxFreq;
         }
 
-        // Y is inverted: low freq at bottom, high at top
-        const y = height * (1 - yNorm);
-        const binHeight = Math.max(1, height / frame.magnitudes.length);
+        // Map frequency to bin index with interpolation
+        const binFloat = freq / freqPerBin;
+        const binLow = Math.floor(binFloat);
+        const binHigh = Math.ceil(binFloat);
+        const binFrac = binFloat - binLow;
 
-        const db = frame.magnitudes[binIdx];
-        ctx.fillStyle = dbToColor(db);
-        ctx.fillRect(x, y - binHeight / 2, frameWidth + 0.5, binHeight + 0.5);
+        // Get magnitude with linear interpolation between bins
+        let db: number;
+        if (binLow < 0 || binHigh >= frame.magnitudes.length) {
+          db = -80;
+        } else if (binLow === binHigh) {
+          db = frame.magnitudes[binLow];
+        } else {
+          const dbLow = frame.magnitudes[binLow];
+          const dbHigh = frame.magnitudes[binHigh];
+          db = dbLow + (dbHigh - dbLow) * binFrac;
+        }
+
+        // Convert to color and set pixel
+        const [r, g, b] = dbToRgb(db);
+        const idx = (py * width + px) * 4;
+        pixels[idx] = r;
+        pixels[idx + 1] = g;
+        pixels[idx + 2] = b;
+        pixels[idx + 3] = 255;
       }
     }
 
-    // Draw frequency grid lines
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
-    ctx.lineWidth = 0.5;
-    ctx.font = "9px monospace";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    // Draw the spectrogram image
+    ctx.putImageData(imageData, 0, 0);
+
+    // Draw frequency grid lines on top
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.font = "10px monospace";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
     ctx.textAlign = "left";
 
     const gridFreqs = [100, 200, 500, 1000, 2000, 5000, 10000, 20000];
@@ -224,15 +262,15 @@ export function FrequencySpectrum({
         yNorm = freq / maxFreq;
       }
 
-      const y = height * (1 - yNorm);
-      if (y > 0 && y < height - 10) {
+      const y = Math.round(height * (1 - yNorm));
+      if (y > 10 && y < height - 5) {
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(width, y);
         ctx.stroke();
 
         const label = freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
-        ctx.fillText(label, 4, y - 2);
+        ctx.fillText(label, 4, y - 3);
       }
     }
 
@@ -248,7 +286,6 @@ export function FrequencySpectrum({
         ctx.lineTo(x, height);
         ctx.stroke();
 
-        // Time label
         const timeStr = (hoverTimeMs / 1000).toFixed(3) + "s";
         ctx.font = "11px monospace";
         ctx.fillStyle = "#f97316";
@@ -265,7 +302,6 @@ export function FrequencySpectrum({
     freqScale,
     hoverTimeMs,
     totalDurationMs,
-    sampleRate,
     minFreq,
     maxFreq,
     freqPerBin,

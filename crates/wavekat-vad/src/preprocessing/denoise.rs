@@ -3,17 +3,24 @@
 //! This module wraps the `nnnoiseless` crate (a pure Rust port of RNNoise)
 //! to provide stationary noise suppression for audio streams.
 //!
-//! # Requirements
+//! # Sample Rate Handling
 //!
-//! - Sample rate: 48 kHz (required by RNNoise)
-//! - Frame size: 480 samples (10ms at 48kHz)
+//! RNNoise internally requires 48kHz audio. This module handles resampling
+//! automatically:
+//! - At 48kHz: audio is processed directly (most efficient)
+//! - At other rates (e.g., 16kHz): audio is upsampled to 48kHz, processed,
+//!   then downsampled back to the original rate
 //!
+//! # Frame Size
+//!
+//! RNNoise processes 480 samples (10ms at 48kHz) at a time.
 //! The denoiser handles frame buffering internally, so you can pass
 //! any chunk size and it will accumulate/process accordingly.
 
+use super::resample::AudioResampler;
 use nnnoiseless::DenoiseState;
 
-/// Expected sample rate for the denoiser (48 kHz).
+/// Internal sample rate required by RNNoise (48 kHz).
 pub const DENOISE_SAMPLE_RATE: u32 = 48000;
 
 /// Frame size expected by RNNoise (480 samples = 10ms at 48kHz).
@@ -22,20 +29,29 @@ const FRAME_SIZE: usize = 480;
 /// RNNoise-based noise suppressor.
 ///
 /// Wraps `nnnoiseless::DenoiseState` with frame buffering to handle
-/// arbitrary input chunk sizes.
+/// arbitrary input chunk sizes. Automatically resamples to/from 48kHz
+/// when the input sample rate differs.
 pub struct Denoiser {
     state: Box<DenoiseState<'static>>,
-    /// Input buffer accumulating samples until we have FRAME_SIZE
+    /// Input sample rate.
+    sample_rate: u32,
+    /// Upsampler: input rate → 48kHz (None if already 48kHz).
+    upsampler: Option<AudioResampler>,
+    /// Downsampler: 48kHz → input rate (None if already 48kHz).
+    downsampler: Option<AudioResampler>,
+    /// Input buffer accumulating samples until we have FRAME_SIZE (at 48kHz).
     input_buffer: Vec<f32>,
-    /// Output buffer holding processed samples
+    /// Output buffer holding processed samples (at 48kHz).
     output_buffer: Vec<f32>,
-    /// Whether this is the first frame (discard due to fade-in artifacts)
+    /// Whether this is the first frame (discard due to fade-in artifacts).
     first_frame: bool,
 }
 
 impl std::fmt::Debug for Denoiser {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Denoiser")
+            .field("sample_rate", &self.sample_rate)
+            .field("resampling", &self.upsampler.is_some())
             .field("input_buffer_len", &self.input_buffer.len())
             .field("output_buffer_len", &self.output_buffer.len())
             .field("first_frame", &self.first_frame)
@@ -46,30 +62,64 @@ impl std::fmt::Debug for Denoiser {
 impl Denoiser {
     /// Create a new denoiser.
     ///
+    /// # Arguments
+    /// * `sample_rate` - Input sample rate in Hz. Common values: 16000, 48000.
+    ///
+    /// If the sample rate is not 48kHz, the denoiser will automatically
+    /// resample to 48kHz for processing and back to the original rate.
+    ///
     /// # Panics
     ///
-    /// Panics if sample_rate is not 48000 Hz.
+    /// Panics if resamplers cannot be created (should not happen with valid rates).
     pub fn new(sample_rate: u32) -> Self {
-        assert_eq!(
-            sample_rate, DENOISE_SAMPLE_RATE,
-            "Denoiser requires 48kHz sample rate, got {sample_rate}Hz"
-        );
+        let (upsampler, downsampler) = if sample_rate == DENOISE_SAMPLE_RATE {
+            (None, None)
+        } else {
+            let up = AudioResampler::new(sample_rate, DENOISE_SAMPLE_RATE)
+                .expect("failed to create upsampler");
+            let down = AudioResampler::new(DENOISE_SAMPLE_RATE, sample_rate)
+                .expect("failed to create downsampler");
+            (Some(up), Some(down))
+        };
 
         Self {
             state: DenoiseState::new(),
+            sample_rate,
+            upsampler,
+            downsampler,
             input_buffer: Vec::with_capacity(FRAME_SIZE),
             output_buffer: Vec::new(),
             first_frame: true,
         }
     }
 
+    /// Returns the sample rate this denoiser was configured for.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// Returns true if resampling is being used.
+    pub fn is_resampling(&self) -> bool {
+        self.upsampler.is_some()
+    }
+
     /// Process audio samples through the noise suppressor.
     ///
-    /// Input samples are i16 values. Returns denoised samples.
-    /// Due to frame buffering, output length may differ from input length.
+    /// Input samples are i16 values at the configured sample rate.
+    /// Returns denoised samples at the same sample rate.
+    /// Due to frame buffering (and resampling if applicable), output length
+    /// may differ from input length.
     pub fn process(&mut self, samples: &[i16]) -> Vec<i16> {
+        // Step 1: Upsample if needed (e.g., 16kHz → 48kHz)
+        let samples_48k: Vec<i16> = if let Some(ref mut upsampler) = self.upsampler {
+            upsampler.process(samples)
+        } else {
+            samples.to_vec()
+        };
+
+        // Step 2: Process through RNNoise at 48kHz
         // Convert i16 to f32 and add to input buffer
-        for &sample in samples {
+        for &sample in &samples_48k {
             self.input_buffer.push(sample as f32);
         }
 
@@ -89,20 +139,26 @@ impl Denoiser {
             if self.first_frame {
                 self.first_frame = false;
                 // Output zeros for the first frame to maintain timing
-                self.output_buffer.extend(std::iter::repeat_n(0.0, FRAME_SIZE));
+                self.output_buffer
+                    .extend(std::iter::repeat_n(0.0, FRAME_SIZE));
             } else {
                 self.output_buffer.extend_from_slice(&output_frame);
             }
         }
 
-        // Convert output buffer to i16 and return
-        let result: Vec<i16> = self
+        // Convert output buffer to i16
+        let denoised_48k: Vec<i16> = self
             .output_buffer
             .drain(..)
             .map(|s| s.round().clamp(-32768.0, 32767.0) as i16)
             .collect();
 
-        result
+        // Step 3: Downsample if needed (e.g., 48kHz → 16kHz)
+        if let Some(ref mut downsampler) = self.downsampler {
+            downsampler.process(&denoised_48k)
+        } else {
+            denoised_48k
+        }
     }
 
     /// Process a complete buffer of samples (must be multiple of FRAME_SIZE).
@@ -150,6 +206,12 @@ impl Denoiser {
         self.input_buffer.clear();
         self.output_buffer.clear();
         self.first_frame = true;
+        if let Some(ref mut upsampler) = self.upsampler {
+            upsampler.reset();
+        }
+        if let Some(ref mut downsampler) = self.downsampler {
+            downsampler.reset();
+        }
     }
 
     /// Returns the number of samples currently buffered.
@@ -163,19 +225,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_denoiser_creation() {
+    fn test_denoiser_creation_48k() {
         let denoiser = Denoiser::new(48000);
         assert_eq!(denoiser.buffered_samples(), 0);
+        assert_eq!(denoiser.sample_rate(), 48000);
+        assert!(!denoiser.is_resampling());
     }
 
     #[test]
-    #[should_panic(expected = "Denoiser requires 48kHz")]
-    fn test_denoiser_wrong_sample_rate() {
-        Denoiser::new(16000);
+    fn test_denoiser_creation_16k() {
+        let denoiser = Denoiser::new(16000);
+        assert_eq!(denoiser.buffered_samples(), 0);
+        assert_eq!(denoiser.sample_rate(), 16000);
+        assert!(denoiser.is_resampling());
     }
 
     #[test]
-    fn test_denoiser_process_single_frame() {
+    fn test_denoiser_process_single_frame_48k() {
         let mut denoiser = Denoiser::new(48000);
 
         // Process exactly one frame
@@ -187,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn test_denoiser_process_multiple_frames() {
+    fn test_denoiser_process_multiple_frames_48k() {
         let mut denoiser = Denoiser::new(48000);
 
         // Process two frames
@@ -241,5 +307,42 @@ mod tests {
         let output = denoiser.process_aligned(&input);
 
         assert_eq!(output.len(), FRAME_SIZE * 3);
+    }
+
+    #[test]
+    fn test_denoiser_16k_produces_output() {
+        let mut denoiser = Denoiser::new(16000);
+
+        // Process enough samples to get output (need extra for resampling buffers)
+        // At 16kHz, we need ~160 samples for 10ms, but resampling buffers need more
+        let input: Vec<i16> = vec![0; 2048];
+        let output = denoiser.process(&input);
+
+        // Should produce some output (exact amount depends on resampler buffering)
+        // Due to multiple buffering stages, first call may not produce full output
+        assert!(
+            output.len() > 0 || denoiser.buffered_samples() > 0,
+            "Should either produce output or buffer samples"
+        );
+    }
+
+    #[test]
+    fn test_denoiser_16k_continuous_processing() {
+        let mut denoiser = Denoiser::new(16000);
+
+        // Process several chunks to fill all buffers
+        let chunk: Vec<i16> = vec![0; 320]; // 20ms at 16kHz
+        let mut total_output = 0;
+
+        for _ in 0..20 {
+            let output = denoiser.process(&chunk);
+            total_output += output.len();
+        }
+
+        // After 400ms of input, we should have substantial output
+        assert!(
+            total_output > 5000,
+            "Expected significant output, got {total_output}"
+        );
     }
 }

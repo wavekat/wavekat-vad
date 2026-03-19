@@ -1,6 +1,6 @@
 use crate::error::VadError;
 use crate::frame::{frame_samples, validate_sample_rate};
-use crate::VoiceActivityDetector;
+use crate::{VadCapabilities, VoiceActivityDetector};
 
 /// WebRTC VAD aggressiveness mode.
 ///
@@ -28,6 +28,9 @@ impl From<WebRtcVadMode> for webrtc_vad::VadMode {
     }
 }
 
+/// Default frame duration for WebRTC VAD (30ms gives best results).
+const DEFAULT_FRAME_DURATION_MS: u32 = 30;
+
 /// Voice activity detector backed by Google's WebRTC VAD.
 ///
 /// Supports sample rates of 8000, 16000, 32000, and 48000 Hz.
@@ -38,6 +41,7 @@ pub struct WebRtcVad {
     vad: webrtc_vad::Vad,
     sample_rate: u32,
     mode: WebRtcVadMode,
+    frame_duration_ms: u32,
 }
 
 // SAFETY: webrtc_vad::Vad wraps a C pointer that is only accessed via &mut self.
@@ -45,24 +49,60 @@ pub struct WebRtcVad {
 unsafe impl Send for WebRtcVad {}
 
 impl WebRtcVad {
-    /// Create a new WebRTC VAD instance.
+    /// Create a new WebRTC VAD instance with default 30ms frame duration.
     ///
     /// # Errors
     ///
     /// Returns `VadError::InvalidSampleRate` if the sample rate is not supported.
     pub fn new(sample_rate: u32, mode: WebRtcVadMode) -> Result<Self, VadError> {
+        Self::with_frame_duration(sample_rate, mode, DEFAULT_FRAME_DURATION_MS)
+    }
+
+    /// Create a new WebRTC VAD instance with custom frame duration.
+    ///
+    /// # Arguments
+    /// * `sample_rate` - Sample rate in Hz (8000, 16000, 32000, or 48000)
+    /// * `mode` - Aggressiveness mode
+    /// * `frame_duration_ms` - Frame duration in ms (10, 20, or 30)
+    ///
+    /// # Errors
+    ///
+    /// Returns `VadError::InvalidSampleRate` if the sample rate is not supported.
+    /// Returns `VadError::InvalidFrameSize` if the frame duration is not 10, 20, or 30ms.
+    pub fn with_frame_duration(
+        sample_rate: u32,
+        mode: WebRtcVadMode,
+        frame_duration_ms: u32,
+    ) -> Result<Self, VadError> {
         validate_sample_rate(sample_rate)?;
+
+        if !matches!(frame_duration_ms, 10 | 20 | 30) {
+            return Err(VadError::InvalidFrameSize {
+                got: frame_samples(sample_rate, frame_duration_ms),
+                expected: frame_samples(sample_rate, 30),
+            });
+        }
+
         let mut vad = webrtc_vad::Vad::new_with_rate(to_sample_rate(sample_rate));
         vad.set_mode(mode.into());
         Ok(Self {
             vad,
             sample_rate,
             mode,
+            frame_duration_ms,
         })
     }
 }
 
 impl VoiceActivityDetector for WebRtcVad {
+    fn capabilities(&self) -> VadCapabilities {
+        VadCapabilities {
+            sample_rate: self.sample_rate,
+            frame_size: frame_samples(self.sample_rate, self.frame_duration_ms),
+            frame_duration_ms: self.frame_duration_ms,
+        }
+    }
+
     fn process(&mut self, samples: &[i16], sample_rate: u32) -> Result<f32, VadError> {
         if sample_rate != self.sample_rate {
             return Err(VadError::InvalidSampleRate(sample_rate));

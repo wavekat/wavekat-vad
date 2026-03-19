@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc};
 use wavekat_vad::preprocessing::Preprocessor;
-use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::{FrameAdapter, VoiceActivityDetector};
 
 /// A VAD result from the pipeline.
 #[derive(Debug, Clone, Serialize)]
@@ -22,6 +22,10 @@ pub struct PipelineResult {
 
 /// Run the VAD pipeline: fan out audio frames to multiple VAD configs.
 ///
+/// Each backend is wrapped in a FrameAdapter that buffers samples until
+/// the backend's required frame size is reached. This allows different
+/// backends with different frame size requirements to coexist.
+///
 /// Returns an mpsc receiver that yields results from all configs.
 pub fn run_pipeline(
     configs: Vec<VadConfig>,
@@ -31,15 +35,21 @@ pub fn run_pipeline(
     let (result_tx, result_rx) = mpsc::channel::<PipelineResult>(1024);
 
     tokio::spawn(async move {
-        // Create detector + preprocessor pairs for each config
-        let mut processors: Vec<(String, Preprocessor, Box<dyn VoiceActivityDetector>)> =
-            Vec::new();
+        // Create detector + preprocessor + adapter for each config
+        let mut processors: Vec<(String, Preprocessor, FrameAdapter)> = Vec::new();
 
         for config in &configs {
             match create_detector(config, sample_rate) {
                 Ok(detector) => {
                     let preprocessor = Preprocessor::new(&config.preprocessing, sample_rate);
-                    processors.push((config.id.clone(), preprocessor, detector));
+                    let adapter = FrameAdapter::new(detector);
+                    tracing::info!(
+                        config_id = %config.id,
+                        backend = %config.backend,
+                        frame_size = adapter.frame_size(),
+                        "created VAD detector"
+                    );
+                    processors.push((config.id.clone(), preprocessor, adapter));
                 }
                 Err(e) => {
                     tracing::error!(config_id = %config.id, "failed to create detector: {e}");
@@ -48,21 +58,24 @@ pub fn run_pipeline(
         }
 
         while let Ok(frame) = audio_rx.recv().await {
-            for (config_id, preprocessor, detector) in &mut processors {
+            for (config_id, preprocessor, adapter) in &mut processors {
                 // Apply preprocessing
                 let preprocessed_samples = preprocessor.process(&frame.samples);
 
-                // Run VAD on preprocessed audio
-                match detector.process(&preprocessed_samples, sample_rate) {
-                    Ok(probability) => {
-                        let result = PipelineResult {
-                            config_id: config_id.clone(),
-                            timestamp_ms: frame.timestamp_ms,
-                            probability,
-                            preprocessed_samples,
-                        };
-                        if result_tx.send(result).await.is_err() {
-                            return;
+                // Run VAD on preprocessed audio (adapter handles frame buffering)
+                match adapter.process_all(&preprocessed_samples, sample_rate) {
+                    Ok(probabilities) => {
+                        // Send result for each complete frame processed
+                        for probability in probabilities {
+                            let result = PipelineResult {
+                                config_id: config_id.clone(),
+                                timestamp_ms: frame.timestamp_ms,
+                                probability,
+                                preprocessed_samples: preprocessed_samples.clone(),
+                            };
+                            if result_tx.send(result).await.is_err() {
+                                return;
+                            }
                         }
                     }
                     Err(e) => {
@@ -111,6 +124,13 @@ fn create_detector(
                 .map_err(|e| format!("failed to create WebRTC VAD: {e}"))?;
             Ok(Box::new(vad))
         }
+        "silero-vad" => {
+            use wavekat_vad::backends::silero::SileroVad;
+
+            let vad = SileroVad::new(sample_rate)
+                .map_err(|e| format!("failed to create Silero VAD: {e}"))?;
+            Ok(Box::new(vad))
+        }
         other => Err(format!("unknown backend: {other}")),
     }
 }
@@ -132,6 +152,11 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
             ]),
             default: serde_json::json!("0 - quality"),
         }],
+    );
+
+    backends.insert(
+        "silero-vad".to_string(),
+        vec![], // Silero has no user-configurable params (only 8kHz/16kHz sample rates supported)
     );
 
     backends

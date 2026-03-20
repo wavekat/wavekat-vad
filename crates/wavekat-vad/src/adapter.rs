@@ -56,11 +56,7 @@ impl FrameAdapter {
     ///
     /// # Errors
     /// Returns an error if the sample rate doesn't match the detector's requirements.
-    pub fn process(
-        &mut self,
-        samples: &[i16],
-        sample_rate: u32,
-    ) -> Result<Option<f32>, VadError> {
+    pub fn process(&mut self, samples: &[i16], sample_rate: u32) -> Result<Option<f32>, VadError> {
         if sample_rate != self.capabilities.sample_rate {
             return Err(VadError::InvalidSampleRate(sample_rate));
         }
@@ -80,11 +76,7 @@ impl FrameAdapter {
     ///
     /// Returns a vector of probabilities, one for each complete frame processed.
     /// Useful when you want to process multiple frames at once.
-    pub fn process_all(
-        &mut self,
-        samples: &[i16],
-        sample_rate: u32,
-    ) -> Result<Vec<f32>, VadError> {
+    pub fn process_all(&mut self, samples: &[i16], sample_rate: u32) -> Result<Vec<f32>, VadError> {
         if sample_rate != self.capabilities.sample_rate {
             return Err(VadError::InvalidSampleRate(sample_rate));
         }
@@ -105,11 +97,7 @@ impl FrameAdapter {
     ///
     /// This is a convenience method for real-time processing where you only
     /// care about the most recent result.
-    pub fn process_latest(
-        &mut self,
-        samples: &[i16],
-        sample_rate: u32,
-    ) -> Result<f32, VadError> {
+    pub fn process_latest(&mut self, samples: &[i16], sample_rate: u32) -> Result<f32, VadError> {
         let results = self.process_all(samples, sample_rate)?;
         Ok(results.into_iter().last().unwrap_or(0.0))
     }

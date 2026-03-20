@@ -19,12 +19,16 @@ let probability = vad.process(&samples, 16000).unwrap();
 |---------|---------|-------------|
 | WebRTC | `webrtc` (default) | Google's WebRTC VAD - fast, binary output |
 | Silero | `silero` | Neural network via ONNX - higher accuracy, continuous probability |
+| TEN-VAD | `ten-vad` | Agora's TEN-VAD via ONNX - pure Rust, no C dependency |
 
 ```toml
 [dependencies]
 wavekat-vad = "0.1"                    # WebRTC only
 wavekat-vad = { version = "0.1", features = ["silero"] }
+wavekat-vad = { version = "0.1", features = ["ten-vad"] }
 ```
+
+ONNX models (Silero and TEN-VAD) are downloaded automatically at build time. For offline builds, set `SILERO_MODEL_PATH` or `TEN_VAD_MODEL_PATH` to a local `.onnx` file.
 
 ## vad-lab
 

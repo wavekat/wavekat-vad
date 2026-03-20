@@ -35,3 +35,4 @@ tools/vad-lab/frontend/dist/
 
 # ONNX models (downloaded at build time)
 crates/wavekat-vad/models/
+

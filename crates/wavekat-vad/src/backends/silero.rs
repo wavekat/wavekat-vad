@@ -96,7 +96,10 @@ impl SileroVad {
     ///
     /// let vad = SileroVad::from_file("path/to/custom_model.onnx", 16000).unwrap();
     /// ```
-    pub fn from_file<P: AsRef<std::path::Path>>(path: P, sample_rate: u32) -> Result<Self, VadError> {
+    pub fn from_file<P: AsRef<std::path::Path>>(
+        path: P,
+        sample_rate: u32,
+    ) -> Result<Self, VadError> {
         Self::validate_sample_rate(sample_rate)?;
 
         let chunk_size = Self::chunk_size_for_rate(sample_rate);

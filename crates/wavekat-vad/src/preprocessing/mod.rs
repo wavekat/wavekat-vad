@@ -142,9 +142,9 @@ impl Preprocessor {
     /// * `config` - Preprocessing configuration
     /// * `sample_rate` - Audio sample rate in Hz
     pub fn new(config: &PreprocessorConfig, sample_rate: u32) -> Self {
-        let high_pass = config.high_pass_hz.map(|cutoff| {
-            BiquadFilter::highpass_butterworth(cutoff, sample_rate)
-        });
+        let high_pass = config
+            .high_pass_hz
+            .map(|cutoff| BiquadFilter::highpass_butterworth(cutoff, sample_rate));
 
         #[cfg(feature = "denoise")]
         let denoiser = if config.denoise {
@@ -318,7 +318,10 @@ mod tests {
 
         // After settling, output should be near zero
         let last_avg: i32 = output[400..].iter().map(|&s| s.abs() as i32).sum::<i32>() / 100;
-        assert!(last_avg < 500, "DC should be attenuated, got avg: {last_avg}");
+        assert!(
+            last_avg < 500,
+            "DC should be attenuated, got avg: {last_avg}"
+        );
     }
 
     #[test]
@@ -336,12 +339,10 @@ mod tests {
         let quiet: Vec<i16> = vec![100; 320];
         let output = preprocessor.process(&quiet);
 
-        let input_rms: f64 = (quiet.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()
-            / quiet.len() as f64)
-            .sqrt();
-        let output_rms: f64 = (output.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()
-            / output.len() as f64)
-            .sqrt();
+        let input_rms: f64 =
+            (quiet.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / quiet.len() as f64).sqrt();
+        let output_rms: f64 =
+            (output.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / output.len() as f64).sqrt();
 
         assert!(
             output_rms > input_rms,

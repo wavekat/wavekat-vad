@@ -131,6 +131,12 @@ fn create_detector(
                 .map_err(|e| format!("failed to create Silero VAD: {e}"))?;
             Ok(Box::new(vad))
         }
+        "ten-vad" => {
+            use wavekat_vad::backends::ten_vad::TenVad;
+
+            let vad = TenVad::new().map_err(|e| format!("failed to create TEN VAD: {e}"))?;
+            Ok(Box::new(vad))
+        }
         other => Err(format!("unknown backend: {other}")),
     }
 }
@@ -159,6 +165,8 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
         vec![], // Silero has no user-configurable params (only 8kHz/16kHz sample rates supported)
     );
 
+    backends.insert("ten-vad".to_string(), vec![]);
+
     backends
 }
 
@@ -168,7 +176,10 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
         ParamInfo {
             name: "high_pass_hz".to_string(),
             description: "High-pass filter cutoff (Hz)".to_string(),
-            param_type: ParamType::Float { min: 20.0, max: 500.0 },
+            param_type: ParamType::Float {
+                min: 20.0,
+                max: 500.0,
+            },
             default: serde_json::json!(null),
         },
         ParamInfo {
@@ -180,7 +191,10 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
         ParamInfo {
             name: "normalize_dbfs".to_string(),
             description: "Normalize to target level (dBFS)".to_string(),
-            param_type: ParamType::Float { min: -40.0, max: 0.0 },
+            param_type: ParamType::Float {
+                min: -40.0,
+                max: 0.0,
+            },
             default: serde_json::json!(null),
         },
     ]

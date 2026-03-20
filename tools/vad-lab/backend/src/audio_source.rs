@@ -73,10 +73,7 @@ pub struct CaptureResult {
 /// Uses the device's default input config (native sample rate and channels),
 /// then downmixes to mono. Returns the actual sample rate in `CaptureResult`.
 /// The capture runs on a dedicated thread (cpal::Stream is !Send on macOS).
-pub fn start_capture(
-    device_index: usize,
-    frame_duration_ms: u32,
-) -> Result<CaptureResult, String> {
+pub fn start_capture(device_index: usize, frame_duration_ms: u32) -> Result<CaptureResult, String> {
     let (tx, rx) = broadcast::channel::<AudioFrame>(256);
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
@@ -198,9 +195,7 @@ pub fn start_capture(
                             Ok(output) => {
                                 if !output.is_empty() {
                                     resampled.extend(
-                                        output[0]
-                                            .iter()
-                                            .map(|&s| (s * i16::MAX as f64) as i16),
+                                        output[0].iter().map(|&s| (s * i16::MAX as f64) as i16),
                                     );
                                 }
                             }
@@ -345,11 +340,7 @@ pub async fn play_file(
             match resampler.process(&[chunk], None) {
                 Ok(output) => {
                     if !output.is_empty() {
-                        resampled.extend(
-                            output[0]
-                                .iter()
-                                .map(|&s| (s * i16::MAX as f64) as i16),
-                        );
+                        resampled.extend(output[0].iter().map(|&s| (s * i16::MAX as f64) as i16));
                     }
                 }
                 Err(e) => {
@@ -365,8 +356,7 @@ pub async fn play_file(
         all_samples_i16
     };
 
-    let samples_per_frame =
-        (effective_sample_rate as usize * frame_duration_ms as usize) / 1000;
+    let samples_per_frame = (effective_sample_rate as usize * frame_duration_ms as usize) / 1000;
     let frame_duration = tokio::time::Duration::from_millis(frame_duration_ms as u64);
     let mut total_samples: u64 = 0;
     let sr = effective_sample_rate as f64;

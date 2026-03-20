@@ -1,6 +1,7 @@
 //! Build script for wavekat-vad.
 //!
 //! Downloads the Silero VAD ONNX model at build time if the `silero` feature is enabled.
+//! Downloads the TEN-VAD ONNX model at build time if the `ten-vad` feature is enabled.
 //!
 //! # Environment Variables
 //!
@@ -16,9 +17,11 @@ const DEFAULT_MODEL_URL: &str =
 const SILERO_MODEL_NAME: &str = "silero_vad.onnx";
 
 fn main() {
-    // Only process if silero feature is enabled
     #[cfg(feature = "silero")]
     setup_silero_model();
+
+    #[cfg(feature = "ten-vad")]
+    setup_ten_vad_model();
 }
 
 #[cfg(feature = "silero")]
@@ -72,5 +75,56 @@ fn setup_silero_model() {
     println!(
         "cargo:warning=Silero VAD model downloaded to {}",
         model_path.display()
+    );
+}
+
+#[cfg(feature = "ten-vad")]
+fn setup_ten_vad_model() {
+    println!("cargo:rerun-if-env-changed=TEN_VAD_MODEL_PATH");
+
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
+    let model_dest = Path::new(&out_dir).join("ten-vad.onnx");
+
+    // Option 1: Use local file if TEN_VAD_MODEL_PATH is set
+    if let Ok(local_path) = env::var("TEN_VAD_MODEL_PATH") {
+        let local_path = Path::new(&local_path);
+        if !local_path.exists() {
+            panic!(
+                "TEN_VAD_MODEL_PATH points to non-existent file: {}",
+                local_path.display()
+            );
+        }
+        println!(
+            "cargo:warning=Using local TEN-VAD model: {}",
+            local_path.display()
+        );
+        fs::copy(local_path, &model_dest).expect("failed to copy local model file");
+        println!("cargo:rerun-if-changed={}", local_path.display());
+        return;
+    }
+
+    // Skip if already exists
+    if model_dest.exists() {
+        return;
+    }
+
+    // Option 2: Download from GitHub
+    let model_url = "https://github.com/TEN-framework/ten-vad/raw/main/src/onnx_model/ten-vad.onnx";
+    println!("cargo:warning=Downloading TEN-VAD model from {model_url}");
+
+    let response = ureq::get(model_url)
+        .call()
+        .unwrap_or_else(|e| panic!("failed to download TEN-VAD model from {model_url}: {e}"));
+
+    let bytes = response
+        .into_body()
+        .read_to_vec()
+        .expect("failed to read TEN-VAD model bytes");
+
+    fs::write(&model_dest, &bytes).expect("failed to write TEN-VAD model file");
+
+    println!(
+        "cargo:warning=TEN-VAD model downloaded to {}",
+        model_dest.display()
     );
 }

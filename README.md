@@ -28,6 +28,8 @@ wavekat-vad = { version = "0.1", features = ["silero"] }
 wavekat-vad = { version = "0.1", features = ["ten-vad"] }
 ```
 
+ONNX models (Silero and TEN-VAD) are downloaded automatically at build time. For offline builds, set `SILERO_MODEL_PATH` or `TEN_VAD_MODEL_PATH` to a local `.onnx` file.
+
 ## vad-lab
 
 Dev tool for live VAD experimentation. Captures audio server-side and streams results to a web UI.

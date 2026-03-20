@@ -8,7 +8,7 @@ repository = "https://github.com/wavekat/wavekat-vad"
 homepage = "https://github.com/wavekat/wavekat-vad"
 documentation = "https://docs.rs/wavekat-vad"
 readme = "../../README.md"
-keywords = ["vad", "voice-activity-detection", "audio", "speech", "webrtc"]
+keywords = ["vad", "voice-detection", "audio", "speech", "webrtc"]
 categories = ["multimedia::audio"]
 
 [features]

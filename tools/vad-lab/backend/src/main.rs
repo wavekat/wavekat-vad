@@ -36,11 +36,6 @@ async fn main() {
 
     let args = Args::parse();
 
-    // Ensure TEN-VAD model file is available at the expected runtime path
-    if let Err(e) = wavekat_vad::backends::ten_vad::setup_model_dir() {
-        tracing::warn!("failed to set up TEN-VAD model: {e}");
-    }
-
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/", get(index_handler))

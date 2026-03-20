@@ -134,20 +134,7 @@ fn create_detector(
         "ten-vad" => {
             use wavekat_vad::backends::ten_vad::TenVad;
 
-            // Hop size fixed at 256 (matches the internal model resolution of 16ms).
-            // Threshold only affects the binary flag from the C API, not the
-            // raw probability we plot.
-            let vad =
-                TenVad::new(256, 0.5).map_err(|e| format!("failed to create TEN VAD: {e}"))?;
-            Ok(Box::new(vad))
-        }
-        "ten-vad-onnx" => {
-            use wavekat_vad::backends::ten_vad_onnx::TenVadOnnx;
-
-            // Pure Rust ONNX implementation of TEN-VAD.
-            // Should produce identical results to ten-vad (FFI).
-            let vad =
-                TenVadOnnx::new().map_err(|e| format!("failed to create TEN VAD ONNX: {e}"))?;
+            let vad = TenVad::new().map_err(|e| format!("failed to create TEN VAD: {e}"))?;
             Ok(Box::new(vad))
         }
         other => Err(format!("unknown backend: {other}")),
@@ -179,8 +166,6 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
     );
 
     backends.insert("ten-vad".to_string(), vec![]);
-
-    backends.insert("ten-vad-onnx".to_string(), vec![]);
 
     backends
 }

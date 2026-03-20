@@ -1,7 +1,7 @@
 //! Build script for wavekat-vad.
 //!
 //! Downloads the Silero VAD ONNX model at build time if the `silero` feature is enabled.
-//! Sets up linking for TEN-VAD prebuilt libraries if the `ten-vad` feature is enabled.
+//! Downloads the TEN-VAD ONNX model at build time if the `ten-vad` feature is enabled.
 //!
 //! # Environment Variables
 //!
@@ -21,10 +21,7 @@ fn main() {
     setup_silero_model();
 
     #[cfg(feature = "ten-vad")]
-    setup_ten_vad();
-
-    #[cfg(feature = "ten-vad-onnx")]
-    setup_ten_vad_onnx_model();
+    setup_ten_vad_model();
 }
 
 #[cfg(feature = "silero")]
@@ -82,56 +79,11 @@ fn setup_silero_model() {
 }
 
 #[cfg(feature = "ten-vad")]
-fn setup_ten_vad() {
+fn setup_ten_vad_model() {
     println!("cargo:rerun-if-env-changed=TEN_VAD_MODEL_PATH");
 
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    // TEN-VAD lives in a git submodule at the workspace root
-    let workspace_root = Path::new(&manifest_dir).join("../..");
-    let ten_vad_dir = workspace_root.join("third_party/ten-vad");
-
-    // Re-run if submodule contents change
-    println!(
-        "cargo:rerun-if-changed={}",
-        ten_vad_dir.join("lib").display()
-    );
-
-    // --- Link the prebuilt C library ---
-
-    #[cfg(target_os = "macos")]
-    {
-        let framework_dir = ten_vad_dir.join("lib/macOS");
-        let framework_dir = framework_dir
-            .canonicalize()
-            .expect("ten-vad submodule not found — run: git submodule update --init");
-        println!(
-            "cargo:rustc-link-search=framework={}",
-            framework_dir.display()
-        );
-        println!("cargo:rustc-link-lib=framework=ten_vad");
-        // Set rpath so the dynamic linker can find the framework at runtime
-        println!(
-            "cargo:rustc-link-arg=-Wl,-rpath,{}",
-            framework_dir.display()
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let lib_dir = ten_vad_dir.join("lib/Linux/x64");
-        let lib_dir = lib_dir
-            .canonicalize()
-            .expect("ten-vad submodule not found — run: git submodule update --init");
-        println!("cargo:rustc-link-search=native={}", lib_dir.display());
-        println!("cargo:rustc-link-lib=dylib=ten_vad");
-        // Set rpath so the dynamic linker can find the .so at runtime
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
-    }
-
-    // --- Prepare the ONNX model (same pattern as Silero) ---
-
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
-    let model_dest = Path::new(&out_dir).join("ten_vad.onnx");
+    let model_dest = Path::new(&out_dir).join("ten-vad.onnx");
 
     // Option 1: Use local file if TEN_VAD_MODEL_PATH is set
     if let Ok(local_path) = env::var("TEN_VAD_MODEL_PATH") {
@@ -156,19 +108,7 @@ fn setup_ten_vad() {
         return;
     }
 
-    // Option 2: Copy from submodule if available
-    let submodule_model = ten_vad_dir.join("src/onnx_model/ten-vad.onnx");
-    if submodule_model.exists() {
-        println!(
-            "cargo:warning=Copying TEN-VAD model from submodule: {}",
-            submodule_model.display()
-        );
-        fs::copy(&submodule_model, &model_dest)
-            .expect("failed to copy TEN-VAD model from submodule");
-        return;
-    }
-
-    // Option 3: Download from GitHub
+    // Option 2: Download from GitHub
     let model_url = "https://github.com/TEN-framework/ten-vad/raw/main/src/onnx_model/ten-vad.onnx";
     println!("cargo:warning=Downloading TEN-VAD model from {model_url}");
 
@@ -185,73 +125,6 @@ fn setup_ten_vad() {
 
     println!(
         "cargo:warning=TEN-VAD model downloaded to {}",
-        model_dest.display()
-    );
-}
-
-#[cfg(feature = "ten-vad-onnx")]
-fn setup_ten_vad_onnx_model() {
-    println!("cargo:rerun-if-env-changed=TEN_VAD_MODEL_PATH");
-
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let workspace_root = Path::new(&manifest_dir).join("../..");
-    let ten_vad_dir = workspace_root.join("third_party/ten-vad");
-
-    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
-    let model_dest = Path::new(&out_dir).join("ten-vad.onnx");
-
-    // Option 1: Use local file if TEN_VAD_MODEL_PATH is set
-    if let Ok(local_path) = env::var("TEN_VAD_MODEL_PATH") {
-        let local_path = Path::new(&local_path);
-        if !local_path.exists() {
-            panic!(
-                "TEN_VAD_MODEL_PATH points to non-existent file: {}",
-                local_path.display()
-            );
-        }
-        println!(
-            "cargo:warning=Using local TEN-VAD model for ONNX backend: {}",
-            local_path.display()
-        );
-        fs::copy(local_path, &model_dest).expect("failed to copy local model file");
-        println!("cargo:rerun-if-changed={}", local_path.display());
-        return;
-    }
-
-    // Skip if already exists
-    if model_dest.exists() {
-        return;
-    }
-
-    // Option 2: Copy from submodule if available
-    let submodule_model = ten_vad_dir.join("src/onnx_model/ten-vad.onnx");
-    if submodule_model.exists() {
-        println!(
-            "cargo:warning=Copying TEN-VAD model from submodule for ONNX backend: {}",
-            submodule_model.display()
-        );
-        fs::copy(&submodule_model, &model_dest)
-            .expect("failed to copy TEN-VAD model from submodule");
-        return;
-    }
-
-    // Option 3: Download from GitHub
-    let model_url = "https://github.com/TEN-framework/ten-vad/raw/main/src/onnx_model/ten-vad.onnx";
-    println!("cargo:warning=Downloading TEN-VAD model for ONNX backend from {model_url}");
-
-    let response = ureq::get(model_url)
-        .call()
-        .unwrap_or_else(|e| panic!("failed to download TEN-VAD model from {model_url}: {e}"));
-
-    let bytes = response
-        .into_body()
-        .read_to_vec()
-        .expect("failed to read TEN-VAD model bytes");
-
-    fs::write(&model_dest, &bytes).expect("failed to write TEN-VAD model file");
-
-    println!(
-        "cargo:warning=TEN-VAD model for ONNX backend downloaded to {}",
         model_dest.display()
     );
 }

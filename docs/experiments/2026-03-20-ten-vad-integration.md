@@ -488,5 +488,15 @@ fn ffi_and_onnx_outputs_match() {
 
 - Windows support — can add later, not needed for experimentation
 - Android/iOS — not relevant for vad-lab
-- Publishing `ten-vad` (FFI) feature to crates.io — blocked by license
-- Publishing `ten-vad-onnx` to crates.io — possible once validated, but not this iteration
+- Publishing `ten-vad` to crates.io — possible once validated, but not this iteration
+
+---
+
+## Outcome (2026-03-20)
+
+Both phases completed successfully. The pure Rust ONNX backend was validated against the FFI reference with excellent agreement:
+- Silence: diff ~0.0000
+- Synthetic speech: diff < 0.002
+- Noise: diff <= 0.06
+
+**Decision:** The FFI backend (Phase 1) has been retired. The pure Rust ONNX implementation is now the sole TEN-VAD backend, available under the `ten-vad` feature flag. The git submodule at `third_party/ten-vad` and the `.gitmodules` file have been removed. The ONNX model is downloaded at build time from the TEN-VAD GitHub repo.

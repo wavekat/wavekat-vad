@@ -10,8 +10,7 @@ default = ["webrtc"]
 webrtc = ["dep:webrtc-vad"]
 silero = ["dep:ort", "dep:ndarray"]
 denoise = ["dep:nnnoiseless", "dep:rubato"]
-ten-vad = []  # links prebuilt C library via build.rs
-ten-vad-onnx = ["dep:ort", "dep:ndarray", "dep:realfft"]  # pure Rust ONNX implementation
+ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft"]  # pure Rust ONNX implementation
 
 [dependencies]
 thiserror = { workspace = true }

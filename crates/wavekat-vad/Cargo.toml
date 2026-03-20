@@ -3,19 +3,25 @@ name = "wavekat-vad"
 version = "0.1.0"
 edition = "2021"
 description = "Unified voice activity detection with multiple backends"
-license = "MIT"
+license = "Apache-2.0"
+repository = "https://github.com/wavekat/wavekat-vad"
+homepage = "https://github.com/wavekat/wavekat-vad"
+documentation = "https://docs.rs/wavekat-vad"
+readme = "../../README.md"
+keywords = ["vad", "voice-detection", "audio", "speech", "webrtc"]
+categories = ["multimedia::audio"]
 
 [features]
 default = ["webrtc"]
 webrtc = ["dep:webrtc-vad"]
-silero = ["dep:ort", "dep:ndarray"]
+silero = ["dep:ort", "dep:ndarray", "dep:ureq"]
 denoise = ["dep:nnnoiseless", "dep:rubato"]
-ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft"]  # pure Rust ONNX implementation
+ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
+serde = ["dep:serde"]
 
 [dependencies]
 thiserror = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { workspace = true, optional = true }
 webrtc-vad = { version = "0.4", optional = true }
 ort = { version = "2.0.0-rc.12", optional = true, features = ["ndarray"] }
 ndarray = { version = "0.17", optional = true }
@@ -24,11 +30,12 @@ rubato = { version = "0.16", optional = true }
 realfft = { version = "3", optional = true }
 
 [build-dependencies]
-ureq = "3"
+ureq = { version = "3", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
 hound = { workspace = true }
+serde_json = { workspace = true }
 
 [[bench]]
 name = "vad_comparison"

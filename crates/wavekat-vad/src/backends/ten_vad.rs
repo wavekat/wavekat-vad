@@ -21,7 +21,7 @@
 //! # Model
 //!
 //! Uses the `ten-vad.onnx` model (downloaded at build time):
-//! - Inputs: features [1,3,41] + 4 hidden states [1,64]
+//! - Inputs: features \[1,3,41\] + 4 hidden states \[1,64\]
 //! - Outputs: probability + 4 updated hidden states
 
 use crate::error::VadError;
@@ -117,7 +117,7 @@ const FEATURE_STDS: [f32; FEATURE_LEN] = [
 // Preprocessing Components
 // ============================================================================
 
-/// Pre-emphasis filter: y[n] = x[n] - α * x[n-1]
+/// Pre-emphasis filter: y\[n\] = x\[n\] - α * x\[n-1\]
 struct PreEmphasis {
     prev_sample: f32,
 }

@@ -1,5 +1,9 @@
 # WaveKat VAD
 
+[![Crates.io](https://img.shields.io/crates/v/wavekat-vad.svg)](https://crates.io/crates/wavekat-vad)
+[![docs.rs](https://docs.rs/wavekat-vad/badge.svg)](https://docs.rs/wavekat-vad)
+[![CI](https://github.com/wavekat/wavekat-vad/actions/workflows/ci.yml/badge.svg)](https://github.com/wavekat/wavekat-vad/actions/workflows/ci.yml)
+
 Voice Activity Detection library for Rust with multiple backend support.
 
 ## Usage
@@ -35,7 +39,7 @@ ONNX models (Silero and TEN-VAD) are downloaded automatically at build time. For
 Dev tool for live VAD experimentation. Captures audio server-side and streams results to a web UI.
 
 <p align="center">
-  <img src="docs/images/vad-lab-screenshot.png" alt="vad-lab screenshot" width="700">
+  <img src="https://raw.githubusercontent.com/wavekat/wavekat-vad/main/docs/images/vad-lab-screenshot.png" alt="vad-lab screenshot" width="700">
   <br>
   <em>vad-lab web interface</em>
 </p>
@@ -51,3 +55,11 @@ make dev-frontend  # Terminal 2
 ## License
 
 Apache-2.0
+
+### TEN-VAD model notice
+
+The TEN-VAD ONNX model (used by the `ten-vad` feature) is licensed under Apache-2.0 with a non-compete clause by the TEN-framework / Agora. It restricts deployment that competes with Agora's offerings and limits deployment to "solely for your benefit and the benefit of your direct End Users." This is **not standard open-source** despite the Apache-2.0 label. Review the [TEN-VAD license](https://github.com/TEN-framework/ten-vad) before using in production.
+
+### Third-party notices
+
+This project uses [nnnoiseless](https://github.com/jneem/nnnoiseless) (BSD-3-Clause) for noise suppression via the `denoise` feature.

@@ -6,12 +6,32 @@
 //!
 //! # Backends
 //!
-//! - **webrtc** (default) — Google's WebRTC VAD, fast binary detection
-//! - **silero** — Neural network based via ONNX Runtime (coming soon)
+//! | Backend | Feature | Description |
+//! |---------|---------|-------------|
+//! | WebRTC | `webrtc` (default) | Google's WebRTC VAD — fast, binary output |
+//! | Silero | `silero` | Neural network via ONNX Runtime — higher accuracy, continuous probability |
+//! | TEN-VAD | `ten-vad` | Agora's TEN-VAD via ONNX — pure Rust, no C dependency |
+//!
+//! # Feature flags
+//!
+//! - **`webrtc`** *(default)* — WebRTC VAD backend
+//! - **`silero`** — Silero VAD backend (downloads ONNX model at build time)
+//! - **`ten-vad`** — TEN-VAD backend (downloads ONNX model at build time)
+//! - **`denoise`** — RNNoise-based noise suppression in the preprocessing pipeline
+//! - **`serde`** — `Serialize`/`Deserialize` impls for config types
+//!
+//! # TEN-VAD model license
+//!
+//! The TEN-VAD ONNX model is licensed under Apache-2.0 with a non-compete clause
+//! by the TEN-framework / Agora. It restricts deployment that competes with Agora's
+//! offerings. Review the [TEN-VAD license](https://github.com/TEN-framework/ten-vad)
+//! before using in production.
 //!
 //! # Example
 //!
 //! ```no_run
+//! # #[cfg(feature = "webrtc")]
+//! # {
 //! use wavekat_vad::VoiceActivityDetector;
 //! use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
 //!
@@ -19,6 +39,7 @@
 //! let samples = vec![0i16; 160]; // 10ms at 16kHz
 //! let probability = vad.process(&samples, 16000).unwrap();
 //! println!("Speech probability: {probability}");
+//! # }
 //! ```
 
 pub mod adapter;

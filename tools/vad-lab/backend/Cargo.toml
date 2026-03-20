@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wavekat-vad = { path = "../../../crates/wavekat-vad", features = ["webrtc", "silero", "denoise", "ten-vad"] }
+wavekat-vad = { path = "../../../crates/wavekat-vad", features = ["webrtc", "silero", "denoise", "ten-vad", "serde"] }
 axum = { version = "0.8", features = ["ws"] }
 tokio = { workspace = true }
 tower-http = { version = "0.6", features = ["cors", "fs"] }

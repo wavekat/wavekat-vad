@@ -30,6 +30,8 @@
 //! # Example
 //!
 //! ```no_run
+//! # #[cfg(feature = "webrtc")]
+//! # {
 //! use wavekat_vad::VoiceActivityDetector;
 //! use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
 //!
@@ -37,6 +39,7 @@
 //! let samples = vec![0i16; 160]; // 10ms at 16kHz
 //! let probability = vad.process(&samples, 16000).unwrap();
 //! println!("Speech probability: {probability}");
+//! # }
 //! ```
 
 pub mod adapter;

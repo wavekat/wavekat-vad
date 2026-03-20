@@ -35,19 +35,18 @@ pub use denoise::{Denoiser, DENOISE_SAMPLE_RATE};
 #[cfg(feature = "denoise")]
 pub use resample::AudioResampler;
 
-use serde::{Deserialize, Serialize};
-
 /// Configuration for the audio preprocessor.
 ///
 /// All fields are optional. Set to `None` or `false` to disable a stage.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PreprocessorConfig {
     /// High-pass filter cutoff frequency in Hz.
     ///
     /// Removes low-frequency noise (HVAC, rumble) that can cause false positives.
     /// Recommended: 80Hz for raw mic input, 200Hz for telephony.
     /// Set to `None` to disable.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub high_pass_hz: Option<f32>,
 
     /// Enable RNNoise-based noise suppression.
@@ -55,14 +54,14 @@ pub struct PreprocessorConfig {
     /// Suppresses stationary background noise while preserving speech.
     /// Requires the `denoise` feature flag. Works at any sample rate
     /// (automatically resamples to 48kHz internally if needed).
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub denoise: bool,
 
     /// Target level for RMS normalization in dBFS.
     ///
     /// Normalizes audio amplitude so VAD thresholds work consistently.
     /// Recommended: -20.0 dBFS. Set to `None` to disable.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub normalize_dbfs: Option<f32>,
 }
 
@@ -268,6 +267,7 @@ mod tests {
         assert_eq!(telephony.high_pass_hz, Some(200.0));
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn test_config_serde() {
         let config = PreprocessorConfig {
@@ -281,6 +281,7 @@ mod tests {
         assert_eq!(config, parsed);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn test_config_serde_defaults() {
         // Empty JSON should deserialize to defaults

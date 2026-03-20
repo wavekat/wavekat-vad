@@ -1,0 +1,9 @@
+[workspace]
+git_tag_enable = true
+git_release_enable = true
+
+[[package]]
+name = "vad-lab"
+release = false
+publish = false
+changelog_update = false

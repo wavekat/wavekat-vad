@@ -8,13 +8,12 @@
 //! - `SILERO_MODEL_PATH`: Path to a local ONNX model file (skips download)
 //! - `SILERO_MODEL_URL`: Custom URL to download the model from
 
+#[allow(unused_imports)]
 use std::env;
+#[allow(unused_imports)]
 use std::fs;
+#[allow(unused_imports)]
 use std::path::Path;
-
-const DEFAULT_MODEL_URL: &str =
-    "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
-const SILERO_MODEL_NAME: &str = "silero_vad.onnx";
 
 fn main() {
     #[cfg(feature = "silero")]
@@ -26,6 +25,10 @@ fn main() {
 
 #[cfg(feature = "silero")]
 fn setup_silero_model() {
+    const DEFAULT_MODEL_URL: &str =
+        "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
+    const SILERO_MODEL_NAME: &str = "silero_vad.onnx";
+
     // Re-run if these env vars change
     println!("cargo:rerun-if-env-changed=SILERO_MODEL_PATH");
     println!("cargo:rerun-if-env-changed=SILERO_MODEL_URL");

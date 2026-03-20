@@ -4,9 +4,7 @@ use crate::error::VadError;
 use ort::session::Session;
 
 /// Create an ONNX Runtime session from a model file on disk.
-pub(crate) fn session_from_file<P: AsRef<std::path::Path>>(
-    path: P,
-) -> Result<Session, VadError> {
+pub(crate) fn session_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Session, VadError> {
     Session::builder()
         .map_err(|e| VadError::BackendError(format!("failed to create session builder: {e}")))?
         .with_intra_threads(1)

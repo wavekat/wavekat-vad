@@ -2805,6 +2805,7 @@ dependencies = [
  "ndarray",
  "nnnoiseless",
  "ort",
+ "realfft",
  "rubato",
  "serde",
  "serde_json",

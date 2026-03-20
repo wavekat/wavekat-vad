@@ -141,6 +141,15 @@ fn create_detector(
                 TenVad::new(256, 0.5).map_err(|e| format!("failed to create TEN VAD: {e}"))?;
             Ok(Box::new(vad))
         }
+        "ten-vad-onnx" => {
+            use wavekat_vad::backends::ten_vad_onnx::TenVadOnnx;
+
+            // Pure Rust ONNX implementation of TEN-VAD.
+            // Should produce identical results to ten-vad (FFI).
+            let vad =
+                TenVadOnnx::new().map_err(|e| format!("failed to create TEN VAD ONNX: {e}"))?;
+            Ok(Box::new(vad))
+        }
         other => Err(format!("unknown backend: {other}")),
     }
 }
@@ -170,6 +179,8 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
     );
 
     backends.insert("ten-vad".to_string(), vec![]);
+
+    backends.insert("ten-vad-onnx".to_string(), vec![]);
 
     backends
 }

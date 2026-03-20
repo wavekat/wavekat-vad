@@ -19,11 +19,14 @@ let probability = vad.process(&samples, 16000).unwrap();
 |---------|---------|-------------|
 | WebRTC | `webrtc` (default) | Google's WebRTC VAD - fast, binary output |
 | Silero | `silero` | Neural network via ONNX - higher accuracy, continuous probability |
+| TEN-VAD (FFI) | `ten-vad` | Agora's TEN-VAD via prebuilt C library (requires git submodule) |
+| TEN-VAD (ONNX) | `ten-vad-onnx` | Pure Rust TEN-VAD - same model, no C dependency |
 
 ```toml
 [dependencies]
 wavekat-vad = "0.1"                    # WebRTC only
 wavekat-vad = { version = "0.1", features = ["silero"] }
+wavekat-vad = { version = "0.1", features = ["ten-vad-onnx"] }
 ```
 
 ## vad-lab

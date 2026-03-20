@@ -821,4 +821,46 @@ mod tests {
         assert_eq!(prep.frame_count, 0);
         assert!(prep.feature_stack.iter().all(|&x| x == 0.0));
     }
+
+    #[test]
+    fn from_memory_with_embedded_model() {
+        // Verify from_memory works with the same bytes that new() uses
+        let vad = TenVad::from_memory(MODEL_BYTES);
+        assert!(vad.is_ok(), "from_memory failed: {:?}", vad.err());
+    }
+
+    #[test]
+    fn from_memory_invalid_bytes() {
+        let result = TenVad::from_memory(b"not a valid onnx model");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(VadError::BackendError(_))));
+    }
+
+    #[test]
+    fn from_file_nonexistent() {
+        let result = TenVad::from_file("/nonexistent/model.onnx");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(VadError::BackendError(_))));
+    }
+
+    #[test]
+    fn from_file_with_temp_model() {
+        // Write the embedded model to a temp file, then load it via from_file
+        let dir = std::env::temp_dir().join("wavekat_vad_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model_path = dir.join("ten-vad-test.onnx");
+        std::fs::write(&model_path, MODEL_BYTES).unwrap();
+
+        let result = TenVad::from_file(&model_path);
+        assert!(result.is_ok(), "from_file failed: {:?}", result.err());
+
+        // Verify the loaded model works
+        let mut vad = result.unwrap();
+        let silence = vec![0i16; 256];
+        let prob = vad.process(&silence, 16000).unwrap();
+        assert!(prob >= 0.0 && prob <= 1.0);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&model_path);
+    }
 }

@@ -24,3 +24,41 @@ pub(crate) fn session_from_memory(model_bytes: &[u8]) -> Result<Session, VadErro
         .commit_from_memory(model_bytes)
         .map_err(|e| VadError::BackendError(format!("failed to load ONNX model: {e}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_from_file_nonexistent_path() {
+        let result = session_from_file("/nonexistent/path/to/model.onnx");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, VadError::BackendError(_)),
+            "Expected BackendError, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn session_from_memory_invalid_bytes() {
+        let result = session_from_memory(b"not a valid onnx model");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, VadError::BackendError(_)),
+            "Expected BackendError, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn session_from_memory_empty_bytes() {
+        let result = session_from_memory(b"");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, VadError::BackendError(_)),
+            "Expected BackendError, got {err:?}"
+        );
+    }
+}

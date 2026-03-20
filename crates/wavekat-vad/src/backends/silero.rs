@@ -399,4 +399,52 @@ mod tests {
         assert!(prob2 < 0.5);
         assert!(prob3 < 0.5);
     }
+
+    #[test]
+    fn from_memory_with_embedded_model() {
+        let vad = SileroVad::from_memory(MODEL_BYTES, 16000);
+        assert!(vad.is_ok(), "from_memory failed: {:?}", vad.err());
+    }
+
+    #[test]
+    fn from_memory_invalid_bytes() {
+        let result = SileroVad::from_memory(b"not a valid onnx model", 16000);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(VadError::BackendError(_))));
+    }
+
+    #[test]
+    fn from_memory_invalid_sample_rate() {
+        // Sample rate validation should happen before ONNX loading
+        let result = SileroVad::from_memory(MODEL_BYTES, 44100);
+        assert!(matches!(result, Err(VadError::InvalidSampleRate(44100))));
+    }
+
+    #[test]
+    fn from_file_nonexistent() {
+        let result = SileroVad::from_file("/nonexistent/model.onnx", 16000);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(VadError::BackendError(_))));
+    }
+
+    #[test]
+    fn from_file_with_temp_model() {
+        // Write the embedded model to a temp file, then load it via from_file
+        let dir = std::env::temp_dir().join("wavekat_vad_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model_path = dir.join("silero-vad-test.onnx");
+        std::fs::write(&model_path, MODEL_BYTES).unwrap();
+
+        let result = SileroVad::from_file(&model_path, 16000);
+        assert!(result.is_ok(), "from_file failed: {:?}", result.err());
+
+        // Verify the loaded model works
+        let mut vad = result.unwrap();
+        let silence = vec![0i16; 512];
+        let prob = vad.process(&silence, 16000).unwrap();
+        assert!(prob >= 0.0 && prob <= 1.0);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&model_path);
+    }
 }

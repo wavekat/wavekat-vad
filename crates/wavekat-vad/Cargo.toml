@@ -15,7 +15,7 @@ categories = ["multimedia::audio"]
 default = ["webrtc"]
 webrtc = ["dep:webrtc-vad"]
 silero = ["dep:ort", "dep:ndarray", "dep:ureq"]
-denoise = ["dep:nnnoiseless", "dep:rubato"]
+denoise = ["dep:nnnoiseless"]
 ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
 serde = ["dep:serde"]
 
@@ -26,7 +26,7 @@ webrtc-vad = { version = "0.4", optional = true }
 ort = { version = "2.0.0-rc.12", optional = true, features = ["ndarray"] }
 ndarray = { version = "0.17", optional = true }
 nnnoiseless = { version = "0.5", optional = true }
-rubato = { version = "0.16", optional = true }
+rubato = "0.16"
 realfft = { version = "3", optional = true }
 
 [build-dependencies]
@@ -37,6 +37,16 @@ criterion = "0.5"
 hound = { workspace = true }
 serde_json = { workspace = true }
 
+[[example]]
+name = "detect_speech"
+
+[[example]]
+name = "ten_vad_file"
+required-features = ["ten-vad"]
+
 [[bench]]
 name = "vad_comparison"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true

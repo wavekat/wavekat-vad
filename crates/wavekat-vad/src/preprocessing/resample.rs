@@ -1,7 +1,6 @@
 //! Audio resampling utilities.
 //!
-//! This module provides resampling for the denoise pipeline, converting
-//! audio to/from 48kHz as required by RNNoise.
+//! FFT-based sample rate conversion for audio preprocessing.
 
 use rubato::{FftFixedIn, Resampler};
 

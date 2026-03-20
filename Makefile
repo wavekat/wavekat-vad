@@ -1,4 +1,4 @@
-.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint
+.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint doc
 
 help:
 	@echo "Available targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  test            Run all tests"
 	@echo "  fmt             Format code"
 	@echo "  lint            Run clippy with warnings as errors"
+	@echo "  doc             Build and open docs in browser"
 
 # Install all dependencies
 setup: setup-backend setup-frontend
@@ -51,3 +52,7 @@ fmt:
 # Lint
 lint:
 	cargo clippy --workspace -- -D warnings
+
+# Build and open docs in browser
+doc:
+	cargo doc --no-deps -p wavekat-vad --all-features --open

@@ -22,18 +22,18 @@
 mod biquad;
 mod normalize;
 
+mod resample;
+
 #[cfg(feature = "denoise")]
 mod denoise;
-#[cfg(feature = "denoise")]
-mod resample;
 
 pub use biquad::BiquadFilter;
 pub use normalize::Normalizer;
 
+pub use resample::AudioResampler;
+
 #[cfg(feature = "denoise")]
 pub use denoise::{Denoiser, DENOISE_SAMPLE_RATE};
-#[cfg(feature = "denoise")]
-pub use resample::AudioResampler;
 
 /// Configuration for the audio preprocessor.
 ///

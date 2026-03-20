@@ -1,3 +1,47 @@
+//! WebRTC VAD backend using Google's WebRTC voice activity detection.
+//!
+//! This backend wraps the [`webrtc-vad`](https://crates.io/crates/webrtc-vad) crate,
+//! which provides bindings to Google's WebRTC VAD C library. It uses Gaussian Mixture
+//! Models (GMM) for fast, lightweight speech detection with binary output.
+//!
+//! # Audio Requirements
+//!
+//! - **Sample rates:** 8000, 16000, 32000, or 48000 Hz
+//! - **Frame duration:** 10, 20, or 30 ms (default: 30 ms)
+//! - **Frame size:** depends on sample rate and duration
+//!   (e.g., 480 samples for 30 ms at 16 kHz)
+//! - **Format:** 16-bit signed integers (i16)
+//!
+//! # Output
+//!
+//! Unlike neural-network backends (Silero, TEN-VAD) that return a continuous
+//! probability, WebRTC VAD returns **binary** results: `1.0` for speech,
+//! `0.0` for silence. There is no confidence score.
+//!
+//! # Aggressiveness Modes
+//!
+//! The [`WebRtcVadMode`] enum controls the trade-off between false positives
+//! and false negatives:
+//!
+//! | Mode | Behavior |
+//! |------|----------|
+//! | `Quality` | Least aggressive — fewest missed detections, more false alarms |
+//! | `LowBitrate` | Balanced for low-bitrate audio |
+//! | `Aggressive` | More aggressive filtering |
+//! | `VeryAggressive` | Most aggressive — fewest false alarms, may miss quiet speech |
+//!
+//! # Example
+//!
+//! ```no_run
+//! use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
+//! use wavekat_vad::VoiceActivityDetector;
+//!
+//! let mut vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
+//! let samples = vec![0i16; 480]; // 30ms at 16kHz
+//! let result = vad.process(&samples, 16000).unwrap();
+//! assert!(result == 0.0 || result == 1.0); // binary output
+//! ```
+
 use crate::error::VadError;
 use crate::frame::{frame_samples, validate_sample_rate};
 use crate::{VadCapabilities, VoiceActivityDetector};
@@ -33,10 +77,13 @@ const DEFAULT_FRAME_DURATION_MS: u32 = 30;
 
 /// Voice activity detector backed by Google's WebRTC VAD.
 ///
-/// Supports sample rates of 8000, 16000, 32000, and 48000 Hz.
-/// Frame duration must be 10, 20, or 30 milliseconds.
+/// A fast, lightweight GMM-based detector that returns binary results:
+/// `1.0` for speech, `0.0` for silence. No internal state persists
+/// between frames, so [`reset()`](VoiceActivityDetector::reset) is
+/// effectively a no-op (it recreates the internal instance).
 ///
-/// Returns binary detection results: `1.0` for speech, `0.0` for silence.
+/// See the [module-level docs](self) for audio requirements, supported
+/// modes, and usage examples.
 pub struct WebRtcVad {
     vad: webrtc_vad::Vad,
     sample_rate: u32,

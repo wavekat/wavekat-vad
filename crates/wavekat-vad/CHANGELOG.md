@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/wavekat/wavekat-vad/compare/v0.1.2...v0.1.3) - 2026-03-20
+
+### Added
+
+- add TEN-VAD example, shared ONNX helpers, and improved docs ([#14](https://github.com/wavekat/wavekat-vad/pull/14))
+
+### Fixed
+
+- correct rustfmt formatting ([#16](https://github.com/wavekat/wavekat-vad/pull/16))
+
 ## [0.1.2](https://github.com/wavekat/wavekat-vad/compare/v0.1.1...v0.1.2) - 2026-03-20
 
 ### Other

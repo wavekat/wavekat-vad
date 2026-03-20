@@ -137,8 +137,8 @@ fn create_detector(
             // Hop size fixed at 256 (matches the internal model resolution of 16ms).
             // Threshold only affects the binary flag from the C API, not the
             // raw probability we plot.
-            let vad = TenVad::new(256, 0.5)
-                .map_err(|e| format!("failed to create TEN VAD: {e}"))?;
+            let vad =
+                TenVad::new(256, 0.5).map_err(|e| format!("failed to create TEN VAD: {e}"))?;
             Ok(Box::new(vad))
         }
         other => Err(format!("unknown backend: {other}")),
@@ -180,7 +180,10 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
         ParamInfo {
             name: "high_pass_hz".to_string(),
             description: "High-pass filter cutoff (Hz)".to_string(),
-            param_type: ParamType::Float { min: 20.0, max: 500.0 },
+            param_type: ParamType::Float {
+                min: 20.0,
+                max: 500.0,
+            },
             default: serde_json::json!(null),
         },
         ParamInfo {
@@ -192,7 +195,10 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
         ParamInfo {
             name: "normalize_dbfs".to_string(),
             description: "Normalize to target level (dBFS)".to_string(),
-            param_type: ParamType::Float { min: -40.0, max: 0.0 },
+            param_type: ParamType::Float {
+                min: -40.0,
+                max: 0.0,
+            },
             default: serde_json::json!(null),
         },
     ]

@@ -153,7 +153,9 @@ pub async fn handle_ws(socket: WebSocket) {
                 } else {
                     let _ = ws_tx
                         .send(send_msg(&ServerMessage::Error {
-                            message: format!("invalid bins: {new_bins}, must be one of {valid_bins:?}"),
+                            message: format!(
+                                "invalid bins: {new_bins}, must be one of {valid_bins:?}"
+                            ),
                         }))
                         .await;
                 }
@@ -225,10 +227,8 @@ pub async fn handle_ws(socket: WebSocket) {
                         let vad_bins = spectrum_bins;
                         tokio::spawn(async move {
                             // Per-config spectrum analyzers (lazily created)
-                            let mut analyzers: std::collections::HashMap<
-                                String,
-                                SpectrumAnalyzer,
-                            > = std::collections::HashMap::new();
+                            let mut analyzers: std::collections::HashMap<String, SpectrumAnalyzer> =
+                                std::collections::HashMap::new();
 
                             while let Some(result) = result_rx.recv().await {
                                 // Send VAD result
@@ -372,10 +372,8 @@ pub async fn handle_ws(socket: WebSocket) {
                                 pipeline::run_pipeline(configs_clone, pipeline_rx, sample_rate);
 
                             // Per-config spectrum analyzers
-                            let mut analyzers: std::collections::HashMap<
-                                String,
-                                SpectrumAnalyzer,
-                            > = std::collections::HashMap::new();
+                            let mut analyzers: std::collections::HashMap<String, SpectrumAnalyzer> =
+                                std::collections::HashMap::new();
 
                             while let Some(result) = result_rx.recv().await {
                                 // Send VAD result

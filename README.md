@@ -6,7 +6,7 @@
 
 Voice Activity Detection library for Rust with multiple backend support.
 
-## Usage
+## Quick Start
 
 ```rust
 use wavekat_vad::VoiceActivityDetector;
@@ -19,20 +19,165 @@ let probability = vad.process(&samples, 16000).unwrap();
 
 ## Backends
 
-| Backend | Feature | Description |
-|---------|---------|-------------|
-| WebRTC | `webrtc` (default) | Google's WebRTC VAD - fast, binary output |
-| Silero | `silero` | Neural network via ONNX - higher accuracy, continuous probability |
-| TEN-VAD | `ten-vad` | Agora's TEN-VAD via ONNX - pure Rust, no C dependency |
+| Backend | Feature | Sample Rates | Frame Size | Output |
+|---------|---------|-------------|------------|--------|
+| WebRTC | `webrtc` (default) | 8/16/32/48 kHz | 10, 20, or 30ms | Binary (0.0 or 1.0) |
+| Silero | `silero` | 8/16 kHz | 32ms (256 or 512 samples) | Continuous (0.0–1.0) |
+| TEN-VAD | `ten-vad` | 16 kHz only | 16ms (256 samples) | Continuous (0.0–1.0) |
 
 ```toml
 [dependencies]
-wavekat-vad = "0.1"                    # WebRTC only
+wavekat-vad = "0.1"                    # WebRTC only (default)
 wavekat-vad = { version = "0.1", features = ["silero"] }
 wavekat-vad = { version = "0.1", features = ["ten-vad"] }
+wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad"] }  # all backends
 ```
 
-ONNX models (Silero and TEN-VAD) are downloaded automatically at build time. For offline builds, set `SILERO_MODEL_PATH` or `TEN_VAD_MODEL_PATH` to a local `.onnx` file.
+### WebRTC
+
+Google's WebRTC VAD. Fast and lightweight, returns binary speech/silence detection. Supports four aggressiveness modes.
+
+```rust
+use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
+
+// Default 30ms frame duration
+let mut vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
+
+// Or specify frame duration (10, 20, or 30ms)
+let mut vad = WebRtcVad::with_frame_duration(16000, WebRtcVadMode::Aggressive, 20).unwrap();
+
+let samples = vec![0i16; 320]; // 20ms at 16kHz
+let result = vad.process(&samples, 16000).unwrap(); // 0.0 or 1.0
+```
+
+### Silero
+
+Neural network (LSTM) via ONNX Runtime. Returns continuous probability, higher accuracy than WebRTC. Only supports 8kHz and 16kHz.
+
+```rust
+use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::silero::SileroVad;
+
+let mut vad = SileroVad::new(16000).unwrap();
+let samples = vec![0i16; 512]; // 32ms at 16kHz
+let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
+
+// Or load a custom model
+let vad = SileroVad::from_file("path/to/model.onnx", 16000).unwrap();
+```
+
+### TEN-VAD
+
+Agora's TEN-VAD with pure Rust preprocessing (no C dependency). Returns continuous probability, 16kHz only.
+
+```rust
+use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::ten_vad::TenVad;
+
+let mut vad = TenVad::new().unwrap();
+let samples = vec![0i16; 256]; // 16ms at 16kHz
+let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
+```
+
+## The `VoiceActivityDetector` Trait
+
+All backends implement a common trait, so you can write code that is generic over backends:
+
+```rust
+use wavekat_vad::{VoiceActivityDetector, VadCapabilities};
+
+fn detect_speech(vad: &mut dyn VoiceActivityDetector, audio: &[i16], sample_rate: u32) {
+    let caps = vad.capabilities();
+    // caps.sample_rate  — required sample rate
+    // caps.frame_size   — required frame size in samples
+    // caps.frame_duration_ms — frame duration
+
+    for frame in audio.chunks_exact(caps.frame_size) {
+        let probability = vad.process(frame, sample_rate).unwrap();
+        if probability > 0.5 {
+            println!("Speech detected!");
+        }
+    }
+}
+```
+
+## `FrameAdapter`
+
+Real-world audio arrives in arbitrary chunk sizes. `FrameAdapter` buffers incoming samples and feeds correctly-sized frames to the backend automatically.
+
+```rust
+use wavekat_vad::FrameAdapter;
+use wavekat_vad::backends::silero::SileroVad;
+
+let vad = SileroVad::new(16000).unwrap();
+let mut adapter = FrameAdapter::new(Box::new(vad));
+
+// Feed arbitrary-sized chunks — adapter handles buffering
+let chunk = vec![0i16; 1000]; // not a multiple of 512
+
+// Get all complete frame results at once
+let probabilities = adapter.process_all(&chunk, 16000).unwrap();
+
+// Or get just the latest result (convenient for real-time)
+let latest = adapter.process_latest(&chunk, 16000).unwrap();
+
+// Or process one frame at a time
+let result = adapter.process(&chunk, 16000).unwrap(); // Some(prob) or None
+```
+
+## Preprocessing
+
+Optional audio preprocessing to improve VAD accuracy. Available stages: high-pass filter, noise suppression, and amplitude normalization.
+
+```rust
+use wavekat_vad::preprocessing::{Preprocessor, PreprocessorConfig};
+
+// Use a preset
+let config = PreprocessorConfig::raw_mic();     // 80Hz HP + normalize + denoise
+// let config = PreprocessorConfig::telephony(); // 200Hz HP only
+
+// Or configure manually
+let config = PreprocessorConfig {
+    high_pass_hz: Some(80.0),       // remove low-frequency rumble
+    denoise: false,                  // requires "denoise" feature
+    normalize_dbfs: Some(-20.0),     // normalize amplitude
+};
+
+let mut preprocessor = Preprocessor::new(&config, 16000);
+let raw_audio: Vec<i16> = vec![0; 512];
+let cleaned = preprocessor.process(&raw_audio);
+// feed `cleaned` to your VAD
+```
+
+## Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `webrtc` | Yes | WebRTC VAD backend |
+| `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
+| `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
+| `denoise` | No | RNNoise-based noise suppression in the preprocessing pipeline |
+| `serde` | No | `Serialize`/`Deserialize` for config types |
+
+### ONNX Model Downloads
+
+Silero and TEN-VAD models are downloaded automatically at build time. For offline or CI builds, point to a local model file:
+
+```sh
+SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
+TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
+```
+
+## Error Handling
+
+All backends return `Result<f32, VadError>`. The error type covers:
+
+- `VadError::InvalidSampleRate(u32)` — unsupported sample rate for the backend
+- `VadError::InvalidFrameSize { got, expected }` — wrong number of samples
+- `VadError::BackendError(String)` — backend-specific error (e.g., ONNX failure)
+
+Use `capabilities()` to check a backend's requirements before processing.
 
 ## vad-lab
 

@@ -38,9 +38,15 @@ hound = { workspace = true }
 serde_json = { workspace = true }
 
 [[example]]
+name = "detect_speech"
+
+[[example]]
 name = "ten_vad_file"
 required-features = ["ten-vad"]
 
 [[bench]]
 name = "vad_comparison"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true

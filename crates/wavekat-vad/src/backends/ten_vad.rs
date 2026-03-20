@@ -1,13 +1,27 @@
 //! TEN-VAD backend using pure Rust ONNX inference.
 //!
-//! This backend implements the TEN-VAD preprocessing pipeline and model inference
-//! entirely in Rust, using the open-source `ten-vad.onnx` model.
+//! This backend wraps [Agora's TEN-VAD](https://github.com/TEN-framework/ten-vad)
+//! model, a lightweight neural network for voice activity detection. The full
+//! preprocessing pipeline (pre-emphasis, STFT, mel filterbank, pitch estimation)
+//! is implemented in pure Rust — only ONNX Runtime (through the
+//! [`ort`](https://crates.io/crates/ort) crate) is needed for inference. Returns
+//! continuous speech probability scores between 0.0 and 1.0.
 //!
 //! # Audio Requirements
 //!
 //! - **Sample rate:** 16000 Hz only
-//! - **Frame size:** 256 samples (16ms)
+//! - **Frame size:** 256 samples (16 ms)
 //! - **Format:** 16-bit signed integers (i16)
+//!
+//! # Internal State
+//!
+//! The model maintains 4 hidden-state tensors and the preprocessor keeps
+//! several buffers (time-domain window, pre-emphasis state, feature stack)
+//! across calls. This means:
+//! - Frames **must** be fed sequentially — skipping or reordering frames
+//!   will produce inaccurate results.
+//! - Call [`reset()`](crate::VoiceActivityDetector::reset) when starting
+//!   a new audio stream or after a gap in input.
 //!
 //! # Preprocessing Pipeline
 //!
@@ -15,15 +29,34 @@
 //! 2. STFT: FFT size 1024, hop size 256, window size 768 (Hann)
 //! 3. 40-band mel filterbank (0-8000 Hz)
 //! 4. Log compression and mean/variance normalization
-//! 5. LPC pitch estimation
-//! 6. Feature stacking: 3 frames × 41 features = [1, 3, 41]
+//! 5. Autocorrelation-based pitch estimation
+//! 6. Feature stacking: 3 frames x 41 features = \[1, 3, 41\]
+//!
+//! # Model Loading
+//!
+//! The default ONNX model is embedded in the binary at compile time — no
+//! external files are needed at runtime. For custom models, use
+//! [`TenVad::from_file`] or [`TenVad::from_memory`].
 //!
 //! # Model
 //!
 //! Uses the `ten-vad.onnx` model (downloaded at build time):
 //! - Inputs: features \[1,3,41\] + 4 hidden states \[1,64\]
 //! - Outputs: probability + 4 updated hidden states
+//!
+//! # Example
+//!
+//! ```no_run
+//! use wavekat_vad::backends::ten_vad::TenVad;
+//! use wavekat_vad::VoiceActivityDetector;
+//!
+//! let mut vad = TenVad::new().unwrap();
+//! let samples = vec![0i16; 256]; // 16ms at 16kHz
+//! let probability = vad.process(&samples, 16000).unwrap();
+//! println!("Speech probability: {probability:.3}");
+//! ```
 
+use super::onnx;
 use crate::error::VadError;
 use crate::{VadCapabilities, VoiceActivityDetector};
 use ndarray::{Array2, Array3};
@@ -470,19 +503,18 @@ impl TenVadPreprocessor {
 // Main VAD Implementation
 // ============================================================================
 
-/// Voice activity detector using TEN-VAD ONNX model with pure Rust preprocessing.
+/// Voice activity detector using Agora's TEN-VAD ONNX model with pure Rust
+/// preprocessing.
 ///
-/// # Example
+/// Accepts 16 kHz / 256-sample (16 ms) frames and returns a continuous
+/// speech probability (0.0–1.0). The full preprocessing pipeline (pre-emphasis,
+/// STFT, mel filterbank, pitch estimation) runs in Rust — no external
+/// libraries beyond ONNX Runtime are required.
 ///
-/// ```no_run
-/// use wavekat_vad::backends::ten_vad::TenVad;
-/// use wavekat_vad::VoiceActivityDetector;
-///
-/// let mut vad = TenVad::new().unwrap();
-/// let samples = vec![0i16; 256]; // 16ms at 16kHz
-/// let probability = vad.process(&samples, 16000).unwrap();
-/// println!("Speech probability: {probability:.3}");
-/// ```
+/// Internal state (hidden states + preprocessor buffers) persists across
+/// calls. Call [`reset()`](VoiceActivityDetector::reset) when switching
+/// to a new audio stream. See the [module-level docs](self) for the
+/// full preprocessing pipeline description.
 pub struct TenVad {
     /// ONNX Runtime session.
     session: Session,
@@ -497,19 +529,58 @@ unsafe impl Send for TenVad {}
 
 impl TenVad {
     /// Create a new TEN-VAD instance using the embedded model.
+    ///
+    /// The ONNX model is embedded in the binary at compile time — no
+    /// external files are needed at runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns `VadError::BackendError` if the ONNX session fails to initialize.
     pub fn new() -> Result<Self, VadError> {
         Self::from_memory(MODEL_BYTES)
     }
 
-    /// Create a new TEN-VAD instance from model bytes in memory.
-    pub fn from_memory(model_bytes: &[u8]) -> Result<Self, VadError> {
-        let session = Session::builder()
-            .map_err(|e| VadError::BackendError(format!("failed to create session builder: {e}")))?
-            .with_intra_threads(1)
-            .map_err(|e| VadError::BackendError(format!("failed to set intra threads: {e}")))?
-            .commit_from_memory(model_bytes)
-            .map_err(|e| VadError::BackendError(format!("failed to load ONNX model: {e}")))?;
+    /// Create a new TEN-VAD instance from a custom ONNX model file.
+    ///
+    /// Use this to load a different model version or a custom-trained model.
+    /// The model must be compatible with the TEN-VAD input/output format.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the ONNX model file
+    ///
+    /// # Errors
+    ///
+    /// Returns `VadError::BackendError` if the model file cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use wavekat_vad::backends::ten_vad::TenVad;
+    ///
+    /// let vad = TenVad::from_file("path/to/custom_model.onnx").unwrap();
+    /// ```
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, VadError> {
+        Self::from_session(onnx::session_from_file(path)?)
+    }
 
+    /// Create a new TEN-VAD instance from model bytes in memory.
+    ///
+    /// Use this to load a custom or alternative ONNX model. The model
+    /// must be compatible with the TEN-VAD input/output format.
+    ///
+    /// # Arguments
+    ///
+    /// * `model_bytes` - Raw ONNX model data
+    ///
+    /// # Errors
+    ///
+    /// Returns `VadError::BackendError` if the ONNX session fails to initialize.
+    pub fn from_memory(model_bytes: &[u8]) -> Result<Self, VadError> {
+        Self::from_session(onnx::session_from_memory(model_bytes)?)
+    }
+
+    fn from_session(session: Session) -> Result<Self, VadError> {
         let hidden_states = [
             Array2::<f32>::zeros((1, HIDDEN_DIM)),
             Array2::<f32>::zeros((1, HIDDEN_DIM)),

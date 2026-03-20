@@ -1,8 +1,46 @@
 //! Silero VAD backend using ONNX Runtime.
 //!
-//! This backend uses a neural network (LSTM) to detect speech with
-//! continuous probability output (0.0 - 1.0).
+//! This backend wraps the [Silero VAD](https://github.com/snakers4/silero-vad)
+//! v5 model, a pre-trained LSTM neural network for voice activity detection.
+//! It runs inference via ONNX Runtime (through the [`ort`](https://crates.io/crates/ort)
+//! crate) and returns continuous speech probability scores between 0.0 and 1.0.
+//!
+//! # Audio Requirements
+//!
+//! - **Sample rates:** 8000 or 16000 Hz only
+//! - **Frame size:** fixed per sample rate:
+//!   - 8 kHz: 256 samples (~32 ms)
+//!   - 16 kHz: 512 samples (~32 ms)
+//! - **Format:** 16-bit signed integers (i16)
+//!
+//! # Internal State
+//!
+//! The model maintains LSTM hidden states and a 64-sample context buffer
+//! across calls. This means:
+//! - Frames **must** be fed sequentially — skipping or reordering frames
+//!   will produce inaccurate results.
+//! - Call [`reset()`](crate::VoiceActivityDetector::reset) when starting
+//!   a new audio stream or after a gap in input.
+//!
+//! # Model Loading
+//!
+//! The default ONNX model (Silero VAD v5) is embedded in the binary at
+//! compile time — no external files are needed at runtime. For custom
+//! models, use [`SileroVad::from_file`] or [`SileroVad::from_memory`].
+//!
+//! # Example
+//!
+//! ```no_run
+//! use wavekat_vad::backends::silero::SileroVad;
+//! use wavekat_vad::VoiceActivityDetector;
+//!
+//! let mut vad = SileroVad::new(16000).unwrap();
+//! let samples = vec![0i16; 512]; // 32ms at 16kHz
+//! let probability = vad.process(&samples, 16000).unwrap();
+//! println!("Speech probability: {probability:.3}");
+//! ```
 
+use super::onnx;
 use crate::error::VadError;
 use crate::{VadCapabilities, VoiceActivityDetector};
 use ndarray::{Array1, Array2, Array3};
@@ -18,30 +56,12 @@ const CONTEXT_SIZE: usize = 64;
 /// LSTM hidden state shape: [2, 1, 128] (h and c states).
 const STATE_DIM: usize = 128;
 
-/// Voice activity detector backed by the Silero VAD ONNX model.
+/// Voice activity detector backed by the Silero VAD v5 ONNX model.
 ///
-/// This backend uses a neural network (LSTM) to detect speech with
-/// continuous probability output. It maintains internal hidden state
-/// that must persist across calls for accurate detection.
-///
-/// # Supported Sample Rates
-///
-/// - 8000 Hz: 256 samples per frame (~32ms)
-/// - 16000 Hz: 512 samples per frame (~32ms)
-///
-/// Note: Unlike WebRTC VAD, Silero only supports 8kHz and 16kHz.
-///
-/// # Example
-///
-/// ```no_run
-/// use wavekat_vad::backends::silero::SileroVad;
-/// use wavekat_vad::VoiceActivityDetector;
-///
-/// let mut vad = SileroVad::new(16000).unwrap();
-/// let samples = vec![0i16; 512]; // 32ms at 16kHz
-/// let probability = vad.process(&samples, 16000).unwrap();
-/// println!("Speech probability: {probability:.3}");
-/// ```
+/// Uses an LSTM neural network to produce continuous speech probability
+/// scores (0.0–1.0). Internal hidden state and a context buffer persist
+/// across calls — see the [module-level docs](self) for details on
+/// state management and audio requirements.
 pub struct SileroVad {
     /// ONNX Runtime session.
     session: Session,
@@ -103,13 +123,7 @@ impl SileroVad {
         Self::validate_sample_rate(sample_rate)?;
 
         let chunk_size = Self::chunk_size_for_rate(sample_rate);
-
-        let session = Session::builder()
-            .map_err(|e| VadError::BackendError(format!("failed to create session builder: {e}")))?
-            .with_intra_threads(1)
-            .map_err(|e| VadError::BackendError(format!("failed to set intra threads: {e}")))?
-            .commit_from_file(path)
-            .map_err(|e| VadError::BackendError(format!("failed to load ONNX model: {e}")))?;
+        let session = onnx::session_from_file(path)?;
 
         let state = Array3::<f32>::zeros((2, 1, STATE_DIM));
         let context = vec![0.0f32; CONTEXT_SIZE];
@@ -135,13 +149,7 @@ impl SileroVad {
         Self::validate_sample_rate(sample_rate)?;
 
         let chunk_size = Self::chunk_size_for_rate(sample_rate);
-
-        let session = Session::builder()
-            .map_err(|e| VadError::BackendError(format!("failed to create session builder: {e}")))?
-            .with_intra_threads(1)
-            .map_err(|e| VadError::BackendError(format!("failed to set intra threads: {e}")))?
-            .commit_from_memory(model_bytes)
-            .map_err(|e| VadError::BackendError(format!("failed to load ONNX model: {e}")))?;
+        let session = onnx::session_from_memory(model_bytes)?;
 
         let state = Array3::<f32>::zeros((2, 1, STATE_DIM));
         let context = vec![0.0f32; CONTEXT_SIZE];

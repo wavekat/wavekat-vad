@@ -6,28 +6,24 @@
 //!
 //! # Backends
 //!
-//! | Backend | Feature | Description |
-//! |---------|---------|-------------|
-//! | WebRTC | `webrtc` (default) | Google's WebRTC VAD — fast, binary output |
-//! | Silero | `silero` | Neural network via ONNX Runtime — higher accuracy, continuous probability |
-//! | TEN-VAD | `ten-vad` | Agora's TEN-VAD via ONNX — pure Rust, no C dependency |
+//! | Backend | Feature | Sample Rates | Frame Size | Output |
+//! |---------|---------|-------------|------------|--------|
+//! | [WebRTC](`backends::webrtc`) | `webrtc` (default) | 8/16/32/48 kHz | 10, 20, or 30ms | Binary (0.0 or 1.0) |
+//! | [Silero](`backends::silero`) | `silero` | 8/16 kHz | 32ms | Continuous (0.0–1.0) |
+//! | [TEN-VAD](`backends::ten_vad`) | `ten-vad` | 16 kHz only | 16ms | Continuous (0.0–1.0) |
 //!
-//! # Feature flags
+//! # Quick start
 //!
-//! - **`webrtc`** *(default)* — WebRTC VAD backend
-//! - **`silero`** — Silero VAD backend (downloads ONNX model at build time)
-//! - **`ten-vad`** — TEN-VAD backend (downloads ONNX model at build time)
-//! - **`denoise`** — RNNoise-based noise suppression in the preprocessing pipeline
-//! - **`serde`** — `Serialize`/`Deserialize` impls for config types
+//! Add the crate with the backend you need:
 //!
-//! # TEN-VAD model license
+//! ```toml
+//! [dependencies]
+//! wavekat-vad = "0.1"                                  # WebRTC only (default)
+//! wavekat-vad = { version = "0.1", features = ["silero"] }  # Silero
+//! wavekat-vad = { version = "0.1", features = ["ten-vad"] } # TEN-VAD
+//! ```
 //!
-//! The TEN-VAD ONNX model is licensed under Apache-2.0 with a non-compete clause
-//! by the TEN-framework / Agora. It restricts deployment that competes with Agora's
-//! offerings. Review the [TEN-VAD license](https://github.com/TEN-framework/ten-vad)
-//! before using in production.
-//!
-//! # Example
+//! Then create a detector and process audio frames:
 //!
 //! ```no_run
 //! # #[cfg(feature = "webrtc")]
@@ -36,11 +32,121 @@
 //! use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
 //!
 //! let mut vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
-//! let samples = vec![0i16; 160]; // 10ms at 16kHz
+//! let samples = vec![0i16; 480]; // 30ms at 16kHz
 //! let probability = vad.process(&samples, 16000).unwrap();
 //! println!("Speech probability: {probability}");
 //! # }
 //! ```
+//!
+//! # Writing backend-generic code
+//!
+//! All backends implement [`VoiceActivityDetector`], so you can write code
+//! that works with any backend:
+//!
+//! ```no_run
+//! use wavekat_vad::VoiceActivityDetector;
+//!
+//! fn detect_speech(vad: &mut dyn VoiceActivityDetector, audio: &[i16], sample_rate: u32) {
+//!     let caps = vad.capabilities();
+//!     for frame in audio.chunks_exact(caps.frame_size) {
+//!         let prob = vad.process(frame, sample_rate).unwrap();
+//!         if prob > 0.5 {
+//!             println!("Speech detected!");
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! # Handling arbitrary chunk sizes
+//!
+//! Real-world audio often arrives in chunks that don't match the backend's
+//! required frame size. Use [`FrameAdapter`] to buffer and split automatically:
+//!
+//! ```no_run
+//! # #[cfg(feature = "webrtc")]
+//! # {
+//! use wavekat_vad::FrameAdapter;
+//! use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
+//!
+//! let vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
+//! let mut adapter = FrameAdapter::new(Box::new(vad));
+//!
+//! let chunk = vec![0i16; 1000]; // arbitrary size
+//! let results = adapter.process_all(&chunk, 16000).unwrap();
+//! for prob in &results {
+//!     println!("{prob:.3}");
+//! }
+//! # }
+//! ```
+//!
+//! # Audio preprocessing
+//!
+//! Optional preprocessing stages can improve accuracy with noisy input.
+//! See the [`preprocessing`] module for details.
+//!
+//! ```
+//! use wavekat_vad::preprocessing::{Preprocessor, PreprocessorConfig};
+//!
+//! let config = PreprocessorConfig::raw_mic(); // 80Hz HP + normalization
+//! let mut preprocessor = Preprocessor::new(&config, 16000);
+//! let raw: Vec<i16> = vec![0; 512];
+//! let cleaned = preprocessor.process(&raw);
+//! // feed `cleaned` to your VAD
+//! ```
+//!
+//! # Feature flags
+//!
+//! | Feature | Default | Description |
+//! |---------|---------|-------------|
+//! | `webrtc` | Yes | WebRTC VAD backend |
+//! | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
+//! | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
+//! | `denoise` | No | RNNoise-based noise suppression in [`preprocessing`] |
+//! | `serde` | No | `Serialize`/`Deserialize` for config types |
+//!
+//! ## ONNX model downloads
+//!
+//! The Silero and TEN-VAD backends download their ONNX models automatically
+//! at build time. For offline or CI builds, set environment variables to
+//! point to local model files:
+//!
+//! ```sh
+//! SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
+//! TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
+//! ```
+//!
+//! # Error handling
+//!
+//! All backends return [`Result<f32, VadError>`]. Check a backend's
+//! requirements with [`VoiceActivityDetector::capabilities()`] before processing:
+//!
+//! - [`VadError::InvalidSampleRate`] — unsupported sample rate
+//! - [`VadError::InvalidFrameSize`] — wrong number of samples
+//! - [`VadError::BackendError`] — backend-specific error (e.g. ONNX failure)
+//!
+//! # Examples
+//!
+//! Runnable examples are in the
+//! [`examples/`](https://github.com/wavekat/wavekat-vad/tree/main/crates/wavekat-vad/examples)
+//! directory:
+//!
+//! - **[`detect_speech`](https://github.com/wavekat/wavekat-vad/blob/main/crates/wavekat-vad/examples/detect_speech.rs)** —
+//!   Detect speech in a WAV file using any backend
+//! - **[`ten_vad_file`](https://github.com/wavekat/wavekat-vad/blob/main/crates/wavekat-vad/examples/ten_vad_file.rs)** —
+//!   Process a WAV file with TEN-VAD directly
+//!
+//! ```sh
+//! cargo run --example detect_speech -- audio.wav
+//! cargo run --example detect_speech --features silero -- -b silero audio.wav
+//! cargo run --example ten_vad_file --features ten-vad -- audio.wav
+//! ```
+//!
+//! # TEN-VAD model license
+//!
+//! The TEN-VAD ONNX model is licensed under Apache-2.0 with a non-compete clause
+//! by the TEN-framework / Agora. It restricts deployment that competes with Agora's
+//! offerings. Review the [TEN-VAD license](https://github.com/TEN-framework/ten-vad)
+//! before using in production.
 
 pub mod adapter;
 pub mod backends;

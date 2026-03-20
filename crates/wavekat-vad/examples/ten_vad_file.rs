@@ -1,9 +1,16 @@
 //! Run TEN-VAD on a WAV file and print speech probabilities.
 //!
-//! Usage:
-//!   cargo run --example ten_vad_file --features ten-vad -- path/to/audio.wav
+//! ```sh
+//! cargo run --example ten_vad_file --features ten-vad -- path/to/audio.wav
+//! ```
 //!
 //! Accepts any WAV file — automatically resamples to 16kHz and converts to mono.
+//!
+//! To use this code in your own project, add these dependencies:
+//! ```sh
+//! cargo add wavekat-vad --features ten-vad
+//! cargo add hound
+//! ```
 
 use std::env;
 

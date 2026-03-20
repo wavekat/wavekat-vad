@@ -3,6 +3,7 @@ name: Release-plz
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release-plz-release:
@@ -16,7 +17,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: release-plz/action@v0
+      - uses: release-plz/action@v0.5
         with:
           command: release
         env:
@@ -37,7 +38,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: release-plz/action@v0
+      - uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:

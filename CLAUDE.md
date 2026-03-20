@@ -191,6 +191,7 @@ Heavier dependencies are fine here — it's a dev tool, not shipped to users:
 - Feature branches for each backend: `feat/webrtc-vad`, `feat/silero-vad`
 - Keep the main branch stable and buildable
 - **Always use squash merge** when merging feature branches into main (keeps history clean)
+- **PR titles must use conventional commit format** — e.g. `feat: add silero backend`, `fix: handle empty frames`. This is used as the squash merge commit message, and release-plz uses it to generate a nicely grouped changelog (Features, Bug Fixes, etc.)
 
 ## Audio Format Notes
 

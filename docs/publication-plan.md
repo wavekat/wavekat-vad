@@ -2,7 +2,7 @@
 
 ## Current State
 
-The library crate (`crates/wavekat-vad`) is code-complete with 3 backends, preprocessing pipeline, 73 unit tests, and clean clippy/fmt. This document covers everything needed to publish v0.1.0 to crates.io.
+The library crate (`crates/wavekat-vad`) is publication-ready with 3 backends, preprocessing pipeline, 38 unit tests, and clean clippy/fmt. All pre-publish issues have been resolved.
 
 ---
 
@@ -29,178 +29,69 @@ All Rust crate dependencies are permissive and compatible with Apache-2.0:
 
 **TEN-VAD model has restrictive licensing.** The TEN-framework license includes a non-compete clause prohibiting deployment that competes with Agora's offerings, and restricts deployment to "solely for your benefit and the benefit of your direct End Users." This is **not standard open-source** despite the Apache-2.0 label.
 
-### Actions Required
-
-1. Document TEN-VAD model license restrictions clearly in README and crate docs
-2. The `ten-vad` feature is already opt-in (not in default features) — good
-3. Models are downloaded by users at build time (not bundled) — good, license applies directly between user and model author
-4. Add a `NOTICE` file or license section mentioning `nnnoiseless` BSD-3-Clause attribution
+Documented in README and crate-level docs (`lib.rs`).
 
 ---
 
-## Issues to Fix
+## Resolved Issues
 
-### 1. License mismatch (blocking)
+All of the following have been addressed:
 
-- `Cargo.toml` declares `license = "MIT"`
-- `LICENSE` file and `README.md` both say Apache-2.0
-- **Fix**: Change `Cargo.toml` to `license = "Apache-2.0"`
-
-### 2. Missing Cargo.toml metadata (blocking)
-
-crates.io requires or strongly recommends these fields:
-
-```toml
-[package]
-name = "wavekat-vad"
-version = "0.1.0"
-edition = "2021"
-description = "Unified voice activity detection with multiple backends"
-license = "Apache-2.0"
-repository = "https://github.com/wavekat/wavekat-vad"
-homepage = "https://github.com/wavekat/wavekat-vad"
-documentation = "https://docs.rs/wavekat-vad"
-readme = "../../README.md"                                    # relative from crate root
-keywords = ["vad", "voice-activity-detection", "audio", "speech", "webrtc"]
-categories = ["multimedia::audio"]
-rust-version = "1.75"                                         # TBD — verify MSRV
-```
-
-### 3. Missing CHANGELOG.md (recommended)
-
-Create `CHANGELOG.md` at repo root following [Keep a Changelog](https://keepachangelog.com/) format:
-
-```markdown
-# Changelog
-
-## [0.1.0] - 2026-03-20
-
-### Added
-- `VoiceActivityDetector` trait — unified interface for all backends
-- `VadCapabilities` — describes backend audio requirements
-- `FrameAdapter` — automatic frame buffering for mismatched sizes
-- WebRTC VAD backend (feature: `webrtc`, enabled by default)
-- Silero VAD backend (feature: `silero`)
-- TEN-VAD backend (feature: `ten-vad`) — note: model has non-standard license terms
-- Audio preprocessing pipeline: high-pass filter, normalization, noise suppression
-- Automatic ONNX model download at build time (Silero, TEN-VAD)
-- Offline build support via `SILERO_MODEL_PATH` / `TEN_VAD_MODEL_PATH` env vars
-```
-
-### 4. Lib.rs crate-level docs outdated
-
-- Mentions Silero as "coming soon" — it's implemented
-- Missing TEN-VAD backend
-- **Fix**: Update the doc comment in `lib.rs`
-
-### 5. `serde` / `serde_json` — keep, but feature-gate
-
-Serde **is used** in the library: `PreprocessorConfig` derives `Serialize`/`Deserialize` with `#[serde(default)]` attributes. `serde_json` is only used in tests.
-
-- **Action**: Put `serde`/`serde_json` behind a `serde` feature flag
-- Move `serde_json` to dev-dependencies (only used in tests)
-- Gate `Serialize`/`Deserialize` derives with `#[cfg_attr(feature = "serde", ...)]`
-
-### 6. `ureq` build dependency — make conditional
-
-`ureq` is only used inside `#[cfg(feature = "silero")]` and `#[cfg(feature = "ten-vad")]` blocks in `build.rs`. Currently it's always pulled in.
-
-- **Action**: Make `ureq` an optional build-dependency, activated by `silero` and `ten-vad` features
-
-```toml
-[build-dependencies]
-ureq = { version = "3", optional = true }
-
-[features]
-silero = ["dep:ort", "dep:ndarray", "dep:ureq"]
-ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
-```
+- [x] Fix license in Cargo.toml → `Apache-2.0`
+- [x] Add missing Cargo.toml metadata (repository, homepage, documentation, readme, keywords, categories)
+- [x] Update lib.rs crate docs (all 3 backends, feature flags, TEN-VAD license notice)
+- [x] Feature-gate serde behind opt-in `serde` feature flag
+- [x] Move `serde_json` to dev-dependencies
+- [x] Make `ureq` a conditional build-dep (activated by `silero` and `ten-vad` features)
+- [x] Add TEN-VAD license warning to README and crate docs
+- [x] Add badges to README (crates.io, docs.rs, CI)
+- [x] Create `.github/workflows/ci.yml` (fmt, clippy, test, doc + feature matrix)
+- [x] `cargo publish --dry-run` passes (20 files, ~162KB)
 
 ---
 
-## Files to Create
+## Release Process
+
+Releases are fully automated via [release-plz](https://release-plz.dev/).
+
+### How it works
+
+1. Merge feature PRs into `main` using **squash merge** with conventional commit messages
+2. release-plz automatically opens/updates a **Release PR** with version bump + CHANGELOG
+3. When ready to publish, review and merge the Release PR
+4. release-plz publishes to crates.io, creates a git tag, and a GitHub Release
+
+### Conventional commit prefixes
+
+| Prefix | Version bump | Example |
+|--------|-------------|---------|
+| `feat:` | minor (0.x.0) | `feat: add rnnoise backend` |
+| `fix:` | patch (0.x.y) | `fix: correct frame size validation` |
+| `feat!:` | major/minor | `feat!: redesign VoiceActivityDetector trait` |
+| `chore:`, `docs:`, `refactor:`, `test:` | none | `docs: update README examples` |
+
+### Configuration files
 
 | File | Purpose |
 |------|---------|
-| `CHANGELOG.md` | Version history |
-| `.github/workflows/ci.yml` | CI pipeline |
+| `.github/workflows/release-plz.yml` | Automated release workflow |
+| `.github/workflows/ci.yml` | CI pipeline (fmt, clippy, test, doc) |
+| `release-plz.toml` | Excludes `vad-lab` from publishing |
+
+### Required secrets
+
+| Secret | Where | Purpose |
+|--------|-------|---------|
+| `CARGO_REGISTRY_TOKEN` | GitHub repo → Settings → Secrets → Actions | crates.io publish token |
+| `GITHUB_TOKEN` | Automatic | PR creation and GitHub Releases |
+
+### First publish
+
+The very first publish must be done manually (or with the token) since the crate doesn't exist on crates.io yet. After that, release-plz handles everything automatically.
 
 ---
 
-## CI Pipeline (`.github/workflows/ci.yml`)
-
-```yaml
-name: CI
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-env:
-  CARGO_TERM_COLOR: always
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test --workspace
-      - run: cargo doc --no-deps --document-private-items
-
-  features:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        features:
-          - ""                          # no default features
-          - "webrtc"
-          - "silero"
-          - "ten-vad"
-          - "webrtc,silero,ten-vad"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}"
-```
-
----
-
-## README Updates
-
-- Add badges at the top (crates.io version, docs.rs, CI status)
-- Add "License" section with note about TEN-VAD model restrictions
-- Keep vad-lab section as-is
-
----
-
-## Pre-publish Checklist
-
-```
-[ ] Fix license in Cargo.toml → "Apache-2.0"
-[ ] Add missing Cargo.toml metadata (repository, keywords, categories, readme)
-[ ] Update lib.rs crate docs (Silero implemented, add TEN-VAD)
-[ ] Feature-gate serde/serde_json, move serde_json to dev-deps
-[ ] Make ureq conditional build-dep (silero/ten-vad only)
-[ ] Add TEN-VAD license warning to README and crate docs
-[ ] Create CHANGELOG.md
-[ ] Create .github/workflows/ci.yml
-[ ] Add badges to README.md
-[ ] Run `cargo publish --dry-run -p wavekat-vad` to verify packaging
-[ ] Verify `cargo doc --open` looks good
-[ ] Tag release: git tag v0.1.0
-[ ] Publish: `cargo publish -p wavekat-vad`
-```
-
----
-
-## Publish Commands
+## Manual Publish Commands (first time only)
 
 ```sh
 # Dry run first

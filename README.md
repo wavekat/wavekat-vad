@@ -39,7 +39,7 @@ ONNX models (Silero and TEN-VAD) are downloaded automatically at build time. For
 Dev tool for live VAD experimentation. Captures audio server-side and streams results to a web UI.
 
 <p align="center">
-  <img src="docs/images/vad-lab-screenshot.png" alt="vad-lab screenshot" width="700">
+  <img src="https://raw.githubusercontent.com/wavekat/wavekat-vad/main/docs/images/vad-lab-screenshot.png" alt="vad-lab screenshot" width="700">
   <br>
   <em>vad-lab web interface</em>
 </p>

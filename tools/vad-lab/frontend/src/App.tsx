@@ -33,6 +33,7 @@ import {
 const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 const MAX_LOG_ENTRIES = 500;
 const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
+const MAX_UPLOAD_SIZE_MB = 100;
 
 interface SpectrumFrame {
   timestamp_ms: number;
@@ -42,8 +43,14 @@ interface SpectrumFrame {
 function App() {
   const socketRef = useRef<VadLabSocket | null>(null);
   const waveformContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(800);
+  const [uploading, setUploading] = useState(false);
+  const [loadingFile, setLoadingFile] = useState(false);
+  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
+  const [fileChannels, setFileChannels] = useState(1);
+  const [selectedChannel, setSelectedChannel] = useState<"mixed" | "left" | "right">("mixed");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
@@ -194,9 +201,11 @@ function App() {
       case "done":
         recordingRef.current = false;
         setRecording(false);
+        setLoadingFile(false);
         break;
 
       case "error":
+        setLoadingFile(false);
         break;
     }
   }, []);
@@ -268,6 +277,68 @@ function App() {
     setRecording(false);
   };
 
+  const loadFile = (path: string, channel: "mixed" | "left" | "right") => {
+    const socket = socketRef.current;
+    if (!socket || !connected) return;
+
+    // Reset state
+    playback.stop();
+    setSamples([]);
+    setSpectrumData([]);
+    setVadResults({});
+    setPreprocessedSamples({});
+    setPreprocessedSpectrumData({});
+    setPlaybackSource("original");
+    setTotalDurationMs(0);
+    setSampleRate(null);
+    setViewport({ viewStartMs: 0, viewDurationMs: calculateViewDuration(containerWidth) });
+
+    socket.send({ type: "set_configs", configs });
+    socket.send({ type: "load_file", path, channel });
+    setLoadingFile(true);
+  };
+
+  const handleFileUpload = async (file: File) => {
+    const socket = socketRef.current;
+    if (!socket || !connected) return;
+
+    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      addLog({ timestamp: new Date(), direction: "system", summary: `File too large (max ${MAX_UPLOAD_SIZE_MB}MB)` });
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        addLog({ timestamp: new Date(), direction: "system", summary: `Upload failed: ${res.statusText}` });
+        return;
+      }
+
+      const { path, channels } = await res.json();
+      setLoadedFilePath(path);
+      setFileChannels(channels ?? 1);
+      setSelectedChannel("mixed");
+      loadFile(path, "mixed");
+    } catch (e) {
+      addLog({ timestamp: new Date(), direction: "system", summary: `Upload error: ${e}` });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleChannelChange = (channel: "mixed" | "left" | "right") => {
+    setSelectedChannel(channel);
+    if (loadedFilePath) {
+      loadFile(loadedFilePath, channel);
+    }
+  };
+
   const handleSpectrumBinsChange = useCallback((bins: number) => {
     setSpectrumBins(bins);
     socketRef.current?.send({ type: "set_spectrum_bins", bins });
@@ -295,44 +366,109 @@ function App() {
       <Separator />
 
       {/* Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={selectedDevice} onValueChange={(v) => { if (v) setSelectedDevice(v); }}>
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select microphone">
-              {devices.find((d) => String(d.index) === selectedDevice)?.name}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {devices.map((d) => (
-              <SelectItem key={d.index} value={String(d.index)}>
-                {d.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="space-y-3">
+        {/* Source controls: Live recording | File upload */}
+        <div className="flex items-center gap-6 flex-wrap">
+          {/* Live recording group */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live</span>
+            <Select value={selectedDevice} onValueChange={(v) => { if (v) setSelectedDevice(v); }}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Select microphone">
+                  {devices.find((d) => String(d.index) === selectedDevice)?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {devices.map((d) => (
+                  <SelectItem key={d.index} value={String(d.index)}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={!connected}
+              onClick={() => socketRef.current?.send({ type: "list_devices" })}
+            >
+              Refresh
+            </Button>
+            {recording ? (
+              <Button variant="destructive" onClick={stopRecording}>
+                Stop
+              </Button>
+            ) : (
+              <Button onClick={startRecording} disabled={!connected || configs.length === 0 || loadingFile}>
+                Record
+              </Button>
+            )}
+          </div>
 
-        <Button
-          variant="outline"
-          disabled={!connected}
-          onClick={() => socketRef.current?.send({ type: "list_devices" })}
-        >
-          Refresh
-        </Button>
+          <div className="w-px h-6 bg-border" />
 
-        {!recording ? (
-          <Button onClick={startRecording} disabled={!connected || configs.length === 0}>
-            Record
-          </Button>
-        ) : (
-          <Button variant="destructive" onClick={stopRecording}>
-            Stop
-          </Button>
-        )}
+          {/* File upload group */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">File</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".wav,audio/wav"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileUpload(file);
+              }}
+            />
+            <Button
+              variant="outline"
+              disabled={!connected || configs.length === 0 || uploading || recording || loadingFile}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? "Uploading..." : "Upload WAV"}
+            </Button>
+            {loadingFile && (
+              <Button variant="outline" disabled>
+                Processing...
+              </Button>
+            )}
+            {loadedFilePath && !recording && !loadingFile && (
+              <>
+                {fileChannels > 1 && (
+                  <Select value={selectedChannel} onValueChange={(v) => { if (v) handleChannelChange(v as "mixed" | "left" | "right"); }}>
+                    <SelectTrigger className="w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mixed">Mixed (L+R)</SelectItem>
+                      <SelectItem value="left">Left only</SelectItem>
+                      <SelectItem value="right">Right only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  variant="outline"
+                  disabled={!connected || configs.length === 0}
+                  onClick={() => loadFile(loadedFilePath, selectedChannel)}
+                >
+                  Re-process
+                </Button>
+              </>
+            )}
+          </div>
 
-        {/* Playback controls */}
-        {!recording && samples.length > 0 && (
-          <>
-            <div className="w-px h-6 bg-border" />
+          {/* Hint when no configs exist */}
+          {configs.length === 0 && connected && (
+            <span className="text-xs text-muted-foreground">
+              Add a VAD config below to enable recording and file upload.
+            </span>
+          )}
+        </div>
+
+        {/* Playback controls (visible when audio exists and not recording) */}
+        {!recording && !loadingFile && samples.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Playback</span>
             <Select value={playbackSource} onValueChange={(v) => { if (v) { playback.stop(); setPlaybackSource(v); } }}>
               <SelectTrigger className="w-48">
                 <SelectValue />
@@ -352,19 +488,19 @@ function App() {
               <>
                 {!playback.state.isPlaying ? (
                   <Button variant="outline" onClick={playback.play}>
-                    ▶ Play
+                    Play
                   </Button>
                 ) : (
                   <Button variant="outline" onClick={playback.pause}>
-                    ⏸ Pause
+                    Pause
                   </Button>
                 )}
                 <Button variant="ghost" onClick={playback.stop} disabled={playback.state.positionMs === 0}>
-                  ⏹ Stop
+                  Stop
                 </Button>
               </>
             )}
-          </>
+          </div>
         )}
       </div>
 

@@ -267,16 +267,48 @@ pub fn start_capture(device_index: usize, frame_duration_ms: u32) -> Result<Capt
     }
 }
 
-/// Load a WAV file and produce audio frames, simulating real-time playback.
-pub async fn play_file(
+/// Which channel(s) to use from a multi-channel WAV file.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelSelect {
+    /// Average all channels.
+    #[default]
+    Mixed,
+    /// Use only the left (first) channel.
+    Left,
+    /// Use only the right (second) channel.
+    Right,
+}
+
+/// Probe a WAV file and return the number of channels.
+pub fn probe_wav_channels(path: &Path) -> Result<u16, String> {
+    let reader =
+        hound::WavReader::open(path).map_err(|e| format!("failed to open WAV file: {e}"))?;
+    Ok(reader.spec().channels)
+}
+
+/// Result of loading a WAV file.
+pub struct LoadedAudio {
+    /// Processed mono samples (resampled if needed).
+    pub samples: Vec<i16>,
+    /// Effective sample rate after resampling.
+    pub sample_rate: u32,
+}
+
+/// Load a WAV file, convert to mono, resample if needed, and optionally truncate.
+///
+/// If `max_duration_secs` is `Some(n)`, only the first `n` seconds of audio
+/// are kept (measured after resampling).
+pub fn load_wav(
     path: &Path,
-    frame_duration_ms: u32,
-    tx: broadcast::Sender<AudioFrame>,
-) -> Result<u32, String> {
+    max_duration_secs: Option<u64>,
+    channel: ChannelSelect,
+) -> Result<LoadedAudio, String> {
     let reader =
         hound::WavReader::open(path).map_err(|e| format!("failed to open WAV file: {e}"))?;
     let spec = reader.spec();
     let file_sample_rate = spec.sample_rate;
+    let channels = spec.channels as usize;
 
     let all_samples_i16: Vec<i16> = match spec.sample_format {
         hound::SampleFormat::Int => reader
@@ -290,6 +322,26 @@ pub async fn play_file(
             .collect(),
     };
 
+    // Downmix to mono based on channel selection
+    let all_samples_i16 = if channels <= 1 {
+        all_samples_i16
+    } else {
+        match channel {
+            ChannelSelect::Mixed => all_samples_i16
+                .chunks(channels)
+                .map(|ch| {
+                    let sum: i32 = ch.iter().map(|&s| s as i32).sum();
+                    (sum / channels as i32) as i16
+                })
+                .collect(),
+            ChannelSelect::Left => all_samples_i16.chunks(channels).map(|ch| ch[0]).collect(),
+            ChannelSelect::Right => all_samples_i16
+                .chunks(channels)
+                .map(|ch| ch.get(1).copied().unwrap_or(ch[0]))
+                .collect(),
+        }
+    };
+
     // Determine if resampling is needed
     let needs_resampling = !is_supported_sample_rate(file_sample_rate);
     let effective_sample_rate = if needs_resampling {
@@ -300,6 +352,7 @@ pub async fn play_file(
 
     tracing::info!(
         file_sample_rate,
+        channels,
         effective_sample_rate,
         needs_resampling,
         "loading WAV file"
@@ -356,12 +409,43 @@ pub async fn play_file(
         all_samples_i16
     };
 
-    let samples_per_frame = (effective_sample_rate as usize * frame_duration_ms as usize) / 1000;
-    let frame_duration = tokio::time::Duration::from_millis(frame_duration_ms as u64);
-    let mut total_samples: u64 = 0;
-    let sr = effective_sample_rate as f64;
+    // Truncate to max duration if specified
+    let processed_samples = if let Some(max_secs) = max_duration_secs {
+        let max_samples = effective_sample_rate as usize * max_secs as usize;
+        if processed_samples.len() > max_samples {
+            tracing::info!(
+                original_secs = processed_samples.len() as f64 / effective_sample_rate as f64,
+                truncated_secs = max_secs,
+                "truncating audio to max duration"
+            );
+            processed_samples[..max_samples].to_vec()
+        } else {
+            processed_samples
+        }
+    } else {
+        processed_samples
+    };
 
-    for chunk in processed_samples.chunks(samples_per_frame) {
+    Ok(LoadedAudio {
+        samples: processed_samples,
+        sample_rate: effective_sample_rate,
+    })
+}
+
+/// Chunk samples into [`AudioFrame`]s and send them to a broadcast channel.
+///
+/// Frames are emitted as fast as the channel allows (no real-time pacing).
+pub fn emit_frames(
+    samples: &[i16],
+    sample_rate: u32,
+    frame_duration_ms: u32,
+    tx: &broadcast::Sender<AudioFrame>,
+) {
+    let samples_per_frame = (sample_rate as usize * frame_duration_ms as usize) / 1000;
+    let sr = sample_rate as f64;
+    let mut total_samples: u64 = 0;
+
+    for chunk in samples.chunks(samples_per_frame) {
         let timestamp_ms = (total_samples as f64 / sr) * 1000.0;
         let frame = AudioFrame {
             timestamp_ms,
@@ -369,10 +453,7 @@ pub async fn play_file(
         };
         let _ = tx.send(frame);
         total_samples += chunk.len() as u64;
-        tokio::time::sleep(frame_duration).await;
     }
-
-    Ok(effective_sample_rate)
 }
 
 #[cfg(test)]

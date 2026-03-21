@@ -366,35 +366,50 @@ function App() {
       <Separator />
 
       {/* Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={selectedDevice} onValueChange={(v) => { if (v) setSelectedDevice(v); }}>
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select microphone">
-              {devices.find((d) => String(d.index) === selectedDevice)?.name}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {devices.map((d) => (
-              <SelectItem key={d.index} value={String(d.index)}>
-                {d.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Button
-          variant="outline"
-          disabled={!connected}
-          onClick={() => socketRef.current?.send({ type: "list_devices" })}
-        >
-          Refresh
-        </Button>
-
-        {!recording && !loadingFile ? (
-          <>
-            <Button onClick={startRecording} disabled={!connected || configs.length === 0}>
-              Record
+      <div className="space-y-3">
+        {/* Source controls: Live recording | File upload */}
+        <div className="flex items-center gap-6 flex-wrap">
+          {/* Live recording group */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live</span>
+            <Select value={selectedDevice} onValueChange={(v) => { if (v) setSelectedDevice(v); }}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Select microphone">
+                  {devices.find((d) => String(d.index) === selectedDevice)?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {devices.map((d) => (
+                  <SelectItem key={d.index} value={String(d.index)}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={!connected}
+              onClick={() => socketRef.current?.send({ type: "list_devices" })}
+            >
+              Refresh
             </Button>
+            {recording ? (
+              <Button variant="destructive" onClick={stopRecording}>
+                Stop
+              </Button>
+            ) : (
+              <Button onClick={startRecording} disabled={!connected || configs.length === 0 || loadingFile}>
+                Record
+              </Button>
+            )}
+          </div>
+
+          <div className="w-px h-6 bg-border" />
+
+          {/* File upload group */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">File</span>
             <input
               ref={fileInputRef}
               type="file"
@@ -407,51 +422,53 @@ function App() {
             />
             <Button
               variant="outline"
-              disabled={!connected || configs.length === 0 || uploading}
+              disabled={!connected || configs.length === 0 || uploading || recording || loadingFile}
               onClick={() => fileInputRef.current?.click()}
             >
               {uploading ? "Uploading..." : "Upload WAV"}
             </Button>
-          </>
-        ) : loadingFile ? (
-          <Button variant="outline" disabled>
-            Processing...
-          </Button>
-        ) : (
-          <Button variant="destructive" onClick={stopRecording}>
-            Stop
-          </Button>
-        )}
-
-        {/* Channel selector and re-process for loaded files */}
-        {loadedFilePath && !recording && !loadingFile && (
-          <>
-            {fileChannels > 1 && (
-              <Select value={selectedChannel} onValueChange={(v) => { if (v) handleChannelChange(v as "mixed" | "left" | "right"); }}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mixed">Mixed (L+R)</SelectItem>
-                  <SelectItem value="left">Left only</SelectItem>
-                  <SelectItem value="right">Right only</SelectItem>
-                </SelectContent>
-              </Select>
+            {loadingFile && (
+              <Button variant="outline" disabled>
+                Processing...
+              </Button>
             )}
-            <Button
-              variant="outline"
-              disabled={!connected || configs.length === 0}
-              onClick={() => loadFile(loadedFilePath, selectedChannel)}
-            >
-              Re-process
-            </Button>
-          </>
-        )}
+            {loadedFilePath && !recording && !loadingFile && (
+              <>
+                {fileChannels > 1 && (
+                  <Select value={selectedChannel} onValueChange={(v) => { if (v) handleChannelChange(v as "mixed" | "left" | "right"); }}>
+                    <SelectTrigger className="w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mixed">Mixed (L+R)</SelectItem>
+                      <SelectItem value="left">Left only</SelectItem>
+                      <SelectItem value="right">Right only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  variant="outline"
+                  disabled={!connected || configs.length === 0}
+                  onClick={() => loadFile(loadedFilePath, selectedChannel)}
+                >
+                  Re-process
+                </Button>
+              </>
+            )}
+          </div>
 
-        {/* Playback controls */}
+          {/* Hint when no configs exist */}
+          {configs.length === 0 && connected && (
+            <span className="text-xs text-muted-foreground">
+              Add a VAD config below to enable recording and file upload.
+            </span>
+          )}
+        </div>
+
+        {/* Playback controls (visible when audio exists and not recording) */}
         {!recording && !loadingFile && samples.length > 0 && (
-          <>
-            <div className="w-px h-6 bg-border" />
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Playback</span>
             <Select value={playbackSource} onValueChange={(v) => { if (v) { playback.stop(); setPlaybackSource(v); } }}>
               <SelectTrigger className="w-48">
                 <SelectValue />
@@ -471,19 +488,19 @@ function App() {
               <>
                 {!playback.state.isPlaying ? (
                   <Button variant="outline" onClick={playback.play}>
-                    ▶ Play
+                    Play
                   </Button>
                 ) : (
                   <Button variant="outline" onClick={playback.pause}>
-                    ⏸ Pause
+                    Pause
                   </Button>
                 )}
                 <Button variant="ghost" onClick={playback.stop} disabled={playback.state.positionMs === 0}>
-                  ⏹ Stop
+                  Stop
                 </Button>
               </>
             )}
-          </>
+          </div>
         )}
       </div>
 

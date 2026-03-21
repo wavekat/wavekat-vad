@@ -188,10 +188,9 @@ pub async fn handle_ws(socket: WebSocket) {
                             }))
                             .await;
 
-                        // Start the pipeline
-                        let pipeline_rx = audio_tx.subscribe();
+                        // Start the pipeline (each config gets its own task)
                         let mut result_rx =
-                            pipeline::run_pipeline(configs.clone(), pipeline_rx, sample_rate);
+                            pipeline::run_pipeline(&configs, &audio_tx, sample_rate);
 
                         // Collect messages from both audio and pipeline into one channel
                         let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ServerMessage>(512);
@@ -359,9 +358,8 @@ pub async fn handle_ws(socket: WebSocket) {
                     broadcast::channel::<AudioFrame>(total_frames.max(16));
 
                 // Start pipeline BEFORE emitting frames so it receives everything
-                let pipeline_rx = audio_tx.subscribe();
                 let result_rx =
-                    pipeline::run_pipeline(configs.clone(), pipeline_rx, sample_rate);
+                    pipeline::run_pipeline(&configs, &audio_tx, sample_rate);
 
                 // Emit all frames at full speed (no sleep)
                 audio_source::emit_frames(

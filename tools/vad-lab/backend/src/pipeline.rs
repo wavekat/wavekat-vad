@@ -22,61 +22,60 @@ pub struct PipelineResult {
 
 /// Run the VAD pipeline: fan out audio frames to multiple VAD configs.
 ///
-/// Each backend is wrapped in a FrameAdapter that buffers samples until
-/// the backend's required frame size is reached. This allows different
-/// backends with different frame size requirements to coexist.
+/// Each config gets its own task with its own broadcast receiver, so all
+/// backends process frames concurrently. Each backend is wrapped in a
+/// FrameAdapter that buffers samples until the backend's required frame
+/// size is reached.
 ///
 /// Returns an mpsc receiver that yields results from all configs.
 pub fn run_pipeline(
-    configs: Vec<VadConfig>,
-    mut audio_rx: broadcast::Receiver<AudioFrame>,
+    configs: &[VadConfig],
+    audio_tx: &broadcast::Sender<AudioFrame>,
     sample_rate: u32,
 ) -> mpsc::Receiver<PipelineResult> {
     let (result_tx, result_rx) = mpsc::channel::<PipelineResult>(1024);
 
-    tokio::spawn(async move {
-        // Create detector + preprocessor + adapter for each config.
-        // Each entry: (config_id, effective_sample_rate, preprocessor, adapter)
-        let mut processors: Vec<(String, u32, Preprocessor, FrameAdapter)> = Vec::new();
+    for config in configs {
+        // Determine the rate the backend actually needs
+        let effective_rate =
+            backend_required_rate(&config.backend, sample_rate).unwrap_or(sample_rate);
 
-        for config in &configs {
-            // Determine the rate the backend actually needs
-            let effective_rate =
-                backend_required_rate(&config.backend, sample_rate).unwrap_or(sample_rate);
-
-            match create_detector(config, effective_rate) {
-                Ok(detector) => {
-                    let preprocessor =
-                        Preprocessor::new(&config.preprocessing, effective_rate);
-                    let adapter = FrameAdapter::new(detector);
-                    if effective_rate != sample_rate {
-                        tracing::info!(
-                            config_id = %config.id,
-                            backend = %config.backend,
-                            from = sample_rate,
-                            to = effective_rate,
-                            "will resample audio for this backend"
-                        );
-                    }
-                    tracing::info!(
-                        config_id = %config.id,
-                        backend = %config.backend,
-                        frame_size = adapter.frame_size(),
-                        "created VAD detector"
-                    );
-                    processors.push((config.id.clone(), effective_rate, preprocessor, adapter));
-                }
-                Err(e) => {
-                    tracing::error!(config_id = %config.id, "failed to create detector: {e}");
-                }
+        let detector = match create_detector(config, effective_rate) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!(config_id = %config.id, "failed to create detector: {e}");
+                continue;
             }
-        }
+        };
 
-        while let Ok(frame) = audio_rx.recv().await {
-            for (config_id, effective_rate, preprocessor, adapter) in &mut processors {
+        let mut preprocessor = Preprocessor::new(&config.preprocessing, effective_rate);
+        let mut adapter = FrameAdapter::new(detector);
+
+        if effective_rate != sample_rate {
+            tracing::info!(
+                config_id = %config.id,
+                backend = %config.backend,
+                from = sample_rate,
+                to = effective_rate,
+                "will resample audio for this backend"
+            );
+        }
+        tracing::info!(
+            config_id = %config.id,
+            backend = %config.backend,
+            frame_size = adapter.frame_size(),
+            "created VAD detector"
+        );
+
+        let config_id = config.id.clone();
+        let mut audio_rx = audio_tx.subscribe();
+        let result_tx = result_tx.clone();
+
+        tokio::spawn(async move {
+            while let Ok(frame) = audio_rx.recv().await {
                 // Resample if the backend requires a different rate
-                let samples = if *effective_rate != sample_rate {
-                    resample_linear(&frame.samples, sample_rate, *effective_rate)
+                let samples = if effective_rate != sample_rate {
+                    resample_linear(&frame.samples, sample_rate, effective_rate)
                 } else {
                     frame.samples.clone()
                 };
@@ -85,9 +84,8 @@ pub fn run_pipeline(
                 let preprocessed_samples = preprocessor.process(&samples);
 
                 // Run VAD on preprocessed audio (adapter handles frame buffering)
-                match adapter.process_all(&preprocessed_samples, *effective_rate) {
+                match adapter.process_all(&preprocessed_samples, effective_rate) {
                     Ok(probabilities) => {
-                        // Send result for each complete frame processed
                         for probability in probabilities {
                             let result = PipelineResult {
                                 config_id: config_id.clone(),
@@ -108,8 +106,11 @@ pub fn run_pipeline(
                     }
                 }
             }
-        }
-    });
+        });
+    }
+
+    // Drop the original sender so result_rx completes when all tasks finish
+    drop(result_tx);
 
     result_rx
 }

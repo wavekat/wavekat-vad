@@ -267,6 +267,26 @@ pub fn start_capture(device_index: usize, frame_duration_ms: u32) -> Result<Capt
     }
 }
 
+/// Which channel(s) to use from a multi-channel WAV file.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelSelect {
+    /// Average all channels.
+    #[default]
+    Mixed,
+    /// Use only the left (first) channel.
+    Left,
+    /// Use only the right (second) channel.
+    Right,
+}
+
+/// Probe a WAV file and return the number of channels.
+pub fn probe_wav_channels(path: &Path) -> Result<u16, String> {
+    let reader =
+        hound::WavReader::open(path).map_err(|e| format!("failed to open WAV file: {e}"))?;
+    Ok(reader.spec().channels)
+}
+
 /// Result of loading a WAV file.
 pub struct LoadedAudio {
     /// Processed mono samples (resampled if needed).
@@ -279,7 +299,11 @@ pub struct LoadedAudio {
 ///
 /// If `max_duration_secs` is `Some(n)`, only the first `n` seconds of audio
 /// are kept (measured after resampling).
-pub fn load_wav(path: &Path, max_duration_secs: Option<u64>) -> Result<LoadedAudio, String> {
+pub fn load_wav(
+    path: &Path,
+    max_duration_secs: Option<u64>,
+    channel: ChannelSelect,
+) -> Result<LoadedAudio, String> {
     let reader =
         hound::WavReader::open(path).map_err(|e| format!("failed to open WAV file: {e}"))?;
     let spec = reader.spec();
@@ -298,17 +322,27 @@ pub fn load_wav(path: &Path, max_duration_secs: Option<u64>) -> Result<LoadedAud
             .collect(),
     };
 
-    // Downmix to mono if multi-channel (average all channels per sample)
-    let all_samples_i16 = if channels > 1 {
+    // Downmix to mono based on channel selection
+    let all_samples_i16 = if channels <= 1 {
         all_samples_i16
-            .chunks(channels)
-            .map(|ch| {
-                let sum: i32 = ch.iter().map(|&s| s as i32).sum();
-                (sum / channels as i32) as i16
-            })
-            .collect()
     } else {
-        all_samples_i16
+        match channel {
+            ChannelSelect::Mixed => all_samples_i16
+                .chunks(channels)
+                .map(|ch| {
+                    let sum: i32 = ch.iter().map(|&s| s as i32).sum();
+                    (sum / channels as i32) as i16
+                })
+                .collect(),
+            ChannelSelect::Left => all_samples_i16
+                .chunks(channels)
+                .map(|ch| ch[0])
+                .collect(),
+            ChannelSelect::Right => all_samples_i16
+                .chunks(channels)
+                .map(|ch| ch.get(1).copied().unwrap_or(ch[0]))
+                .collect(),
+        }
     };
 
     // Determine if resampling is needed

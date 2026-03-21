@@ -103,9 +103,10 @@ async fn upload_handler(mut multipart: Multipart) -> Result<Json<serde_json::Val
     })?;
 
     let path_str = dest.to_string_lossy().to_string();
-    tracing::info!(path = %path_str, size = data.len(), "file uploaded");
+    let channels = audio_source::probe_wav_channels(&dest).unwrap_or(1);
+    tracing::info!(path = %path_str, size = data.len(), channels, "file uploaded");
 
-    Ok(Json(json!({ "path": path_str })))
+    Ok(Json(json!({ "path": path_str, "channels": channels })))
 }
 
 async fn index_handler() -> Html<&'static str> {

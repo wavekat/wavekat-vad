@@ -43,7 +43,7 @@ export type ClientMessage =
   | { type: "list_backends" }
   | { type: "start_recording"; device_index: number; max_duration_secs?: number }
   | { type: "stop_recording" }
-  | { type: "load_file"; path: string }
+  | { type: "load_file"; path: string; channel?: "mixed" | "left" | "right" }
   | { type: "set_configs"; configs: VadConfig[] }
   | { type: "set_spectrum_bins"; bins: number };
 

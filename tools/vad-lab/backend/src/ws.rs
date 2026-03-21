@@ -3,7 +3,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::audio_source::{self, AudioDevice, AudioFrame};
+use crate::audio_source::{self, AudioDevice, AudioFrame, ChannelSelect};
 use crate::pipeline;
 use crate::session::VadConfig;
 use crate::spectrum::{SpectrumAnalyzer, DEFAULT_OUTPUT_BINS};
@@ -28,6 +28,8 @@ pub enum ClientMessage {
     StopRecording,
     LoadFile {
         path: String,
+        #[serde(default)]
+        channel: ChannelSelect,
     },
     SetConfigs {
         configs: Vec<VadConfig>,
@@ -325,11 +327,11 @@ pub async fn handle_ws(socket: WebSocket) {
                 tracing::info!("recording stopped");
             }
 
-            ClientMessage::LoadFile { path } => {
+            ClientMessage::LoadFile { path, channel } => {
                 // Load the WAV file (read + resample + truncate) — fast, no playback
                 let file_path = std::path::Path::new(&path);
                 let max_duration = Some(default_max_duration_secs());
-                let loaded = match audio_source::load_wav(file_path, max_duration) {
+                let loaded = match audio_source::load_wav(file_path, max_duration, channel) {
                     Ok(l) => l,
                     Err(e) => {
                         let _ = ws_tx

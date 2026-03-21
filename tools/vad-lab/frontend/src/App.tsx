@@ -48,6 +48,9 @@ function App() {
   const [containerWidth, setContainerWidth] = useState(800);
   const [uploading, setUploading] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
+  const [fileChannels, setFileChannels] = useState(1);
+  const [selectedChannel, setSelectedChannel] = useState<"mixed" | "left" | "right">("mixed");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
@@ -274,6 +277,27 @@ function App() {
     setRecording(false);
   };
 
+  const loadFile = (path: string, channel: "mixed" | "left" | "right") => {
+    const socket = socketRef.current;
+    if (!socket || !connected) return;
+
+    // Reset state
+    playback.stop();
+    setSamples([]);
+    setSpectrumData([]);
+    setVadResults({});
+    setPreprocessedSamples({});
+    setPreprocessedSpectrumData({});
+    setPlaybackSource("original");
+    setTotalDurationMs(0);
+    setSampleRate(null);
+    setViewport({ viewStartMs: 0, viewDurationMs: calculateViewDuration(containerWidth) });
+
+    socket.send({ type: "set_configs", configs });
+    socket.send({ type: "load_file", path, channel });
+    setLoadingFile(true);
+  };
+
   const handleFileUpload = async (file: File) => {
     const socket = socketRef.current;
     if (!socket || !connected) return;
@@ -295,28 +319,23 @@ function App() {
         return;
       }
 
-      const { path } = await res.json();
-
-      // Reset state for new file
-      setSamples([]);
-      setSpectrumData([]);
-      setVadResults({});
-      setPreprocessedSamples({});
-      setPreprocessedSpectrumData({});
-      setPlaybackSource("original");
-      setTotalDurationMs(0);
-      setSampleRate(null);
-      setViewport({ viewStartMs: 0, viewDurationMs: calculateViewDuration(containerWidth) });
-
-      socket.send({ type: "set_configs", configs });
-      socket.send({ type: "load_file", path });
-      setLoadingFile(true);
+      const { path, channels } = await res.json();
+      setLoadedFilePath(path);
+      setFileChannels(channels ?? 1);
+      setSelectedChannel("mixed");
+      loadFile(path, "mixed");
     } catch (e) {
       addLog({ timestamp: new Date(), direction: "system", summary: `Upload error: ${e}` });
     } finally {
       setUploading(false);
-      // Reset input so the same file can be re-selected
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleChannelChange = (channel: "mixed" | "left" | "right") => {
+    setSelectedChannel(channel);
+    if (loadedFilePath) {
+      loadFile(loadedFilePath, channel);
     }
   };
 
@@ -402,6 +421,20 @@ function App() {
           <Button variant="destructive" onClick={stopRecording}>
             Stop
           </Button>
+        )}
+
+        {/* Channel selector for stereo files */}
+        {fileChannels > 1 && loadedFilePath && !recording && !loadingFile && (
+          <Select value={selectedChannel} onValueChange={(v) => { if (v) handleChannelChange(v as "mixed" | "left" | "right"); }}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mixed">Mixed (L+R)</SelectItem>
+              <SelectItem value="left">Left only</SelectItem>
+              <SelectItem value="right">Right only</SelectItem>
+            </SelectContent>
+          </Select>
         )}
 
         {/* Playback controls */}

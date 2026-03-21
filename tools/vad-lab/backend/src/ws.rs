@@ -351,15 +351,12 @@ pub async fn handle_ws(socket: WebSocket) {
                     .await;
 
                 // Broadcast channel large enough for all frames (no lag)
-                let samples_per_frame =
-                    sample_rate as usize * frame_duration_ms as usize / 1000;
+                let samples_per_frame = sample_rate as usize * frame_duration_ms as usize / 1000;
                 let total_frames = loaded.samples.len() / samples_per_frame.max(1) + 16;
-                let (audio_tx, _) =
-                    broadcast::channel::<AudioFrame>(total_frames.max(16));
+                let (audio_tx, _) = broadcast::channel::<AudioFrame>(total_frames.max(16));
 
                 // Start pipeline BEFORE emitting frames so it receives everything
-                let result_rx =
-                    pipeline::run_pipeline(&configs, &audio_tx, sample_rate);
+                let result_rx = pipeline::run_pipeline(&configs, &audio_tx, sample_rate);
 
                 // Emit all frames at full speed (no sleep)
                 audio_source::emit_frames(

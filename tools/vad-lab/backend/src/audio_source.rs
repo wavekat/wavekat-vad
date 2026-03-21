@@ -334,10 +334,7 @@ pub fn load_wav(
                     (sum / channels as i32) as i16
                 })
                 .collect(),
-            ChannelSelect::Left => all_samples_i16
-                .chunks(channels)
-                .map(|ch| ch[0])
-                .collect(),
+            ChannelSelect::Left => all_samples_i16.chunks(channels).map(|ch| ch[0]).collect(),
             ChannelSelect::Right => all_samples_i16
                 .chunks(channels)
                 .map(|ch| ch.get(1).copied().unwrap_or(ch[0]))

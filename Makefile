@@ -1,4 +1,4 @@
-.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint doc
+.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint doc ci
 
 help:
 	@echo "Available targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  fmt             Format code"
 	@echo "  lint            Run clippy with warnings as errors"
 	@echo "  doc             Build and open docs in browser"
+	@echo "  ci              Run all CI checks locally (fmt, clippy, test, doc, features)"
 
 # Install all dependencies
 setup: setup-backend setup-frontend
@@ -56,3 +57,16 @@ lint:
 # Build and open docs in browser
 doc:
 	cargo doc --no-deps -p wavekat-vad --all-features --open
+
+# Run all CI checks locally (mirrors .github/workflows/ci.yml)
+ci:
+	cargo fmt --all -- --check
+	cargo clippy --workspace -- -D warnings
+	cargo test --workspace
+	cargo doc --no-deps -p wavekat-vad --all-features
+	cargo test -p wavekat-vad --no-default-features --features ""
+	cargo test -p wavekat-vad --no-default-features --features "webrtc"
+	cargo test -p wavekat-vad --no-default-features --features "silero"
+	cargo test -p wavekat-vad --no-default-features --features "ten-vad"
+	cargo test -p wavekat-vad --no-default-features --features "serde"
+	cargo test -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,serde"

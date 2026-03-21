@@ -66,10 +66,7 @@ async fn upload_handler(mut multipart: Multipart) -> Result<Json<serde_json::Val
         })?
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    let file_name = field
-        .file_name()
-        .unwrap_or("upload.wav")
-        .to_string();
+    let file_name = field.file_name().unwrap_or("upload.wav").to_string();
 
     // Only accept .wav files
     if !file_name.to_lowercase().ends_with(".wav") {

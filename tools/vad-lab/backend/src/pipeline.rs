@@ -35,21 +35,36 @@ pub fn run_pipeline(
     let (result_tx, result_rx) = mpsc::channel::<PipelineResult>(1024);
 
     tokio::spawn(async move {
-        // Create detector + preprocessor + adapter for each config
-        let mut processors: Vec<(String, Preprocessor, FrameAdapter)> = Vec::new();
+        // Create detector + preprocessor + adapter for each config.
+        // Each entry: (config_id, effective_sample_rate, preprocessor, adapter)
+        let mut processors: Vec<(String, u32, Preprocessor, FrameAdapter)> = Vec::new();
 
         for config in &configs {
-            match create_detector(config, sample_rate) {
+            // Determine the rate the backend actually needs
+            let effective_rate =
+                backend_required_rate(&config.backend, sample_rate).unwrap_or(sample_rate);
+
+            match create_detector(config, effective_rate) {
                 Ok(detector) => {
-                    let preprocessor = Preprocessor::new(&config.preprocessing, sample_rate);
+                    let preprocessor =
+                        Preprocessor::new(&config.preprocessing, effective_rate);
                     let adapter = FrameAdapter::new(detector);
+                    if effective_rate != sample_rate {
+                        tracing::info!(
+                            config_id = %config.id,
+                            backend = %config.backend,
+                            from = sample_rate,
+                            to = effective_rate,
+                            "will resample audio for this backend"
+                        );
+                    }
                     tracing::info!(
                         config_id = %config.id,
                         backend = %config.backend,
                         frame_size = adapter.frame_size(),
                         "created VAD detector"
                     );
-                    processors.push((config.id.clone(), preprocessor, adapter));
+                    processors.push((config.id.clone(), effective_rate, preprocessor, adapter));
                 }
                 Err(e) => {
                     tracing::error!(config_id = %config.id, "failed to create detector: {e}");
@@ -58,12 +73,19 @@ pub fn run_pipeline(
         }
 
         while let Ok(frame) = audio_rx.recv().await {
-            for (config_id, preprocessor, adapter) in &mut processors {
+            for (config_id, effective_rate, preprocessor, adapter) in &mut processors {
+                // Resample if the backend requires a different rate
+                let samples = if *effective_rate != sample_rate {
+                    resample_linear(&frame.samples, sample_rate, *effective_rate)
+                } else {
+                    frame.samples.clone()
+                };
+
                 // Apply preprocessing
-                let preprocessed_samples = preprocessor.process(&frame.samples);
+                let preprocessed_samples = preprocessor.process(&samples);
 
                 // Run VAD on preprocessed audio (adapter handles frame buffering)
-                match adapter.process_all(&preprocessed_samples, sample_rate) {
+                match adapter.process_all(&preprocessed_samples, *effective_rate) {
                     Ok(probabilities) => {
                         // Send result for each complete frame processed
                         for probability in probabilities {
@@ -90,6 +112,39 @@ pub fn run_pipeline(
     });
 
     result_rx
+}
+
+/// Return the sample rate that a backend requires.
+///
+/// Returns `None` when the backend accepts the given `input_rate` as-is.
+fn backend_required_rate(backend: &str, input_rate: u32) -> Option<u32> {
+    match backend {
+        // TEN-VAD only supports 16 kHz
+        "ten-vad" if input_rate != 16000 => Some(16000),
+        _ => None,
+    }
+}
+
+/// Resample audio via linear interpolation.
+///
+/// Good enough for VAD — we only need the sample rate to be correct, not
+/// audiophile-quality resampling.
+fn resample_linear(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
+    if from_rate == to_rate || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let ratio = to_rate as f64 / from_rate as f64;
+    let output_len = (samples.len() as f64 * ratio).round() as usize;
+    let mut output = Vec::with_capacity(output_len);
+    for i in 0..output_len {
+        let src_pos = i as f64 / ratio;
+        let src_idx = src_pos as usize;
+        let frac = src_pos - src_idx as f64;
+        let s0 = samples[src_idx.min(samples.len() - 1)] as f64;
+        let s1 = samples[(src_idx + 1).min(samples.len() - 1)] as f64;
+        output.push((s0 + frac * (s1 - s0)) as i16);
+    }
+    output
 }
 
 /// Create a VAD detector from a config.

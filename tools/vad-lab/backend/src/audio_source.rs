@@ -284,6 +284,7 @@ pub fn load_wav(path: &Path, max_duration_secs: Option<u64>) -> Result<LoadedAud
         hound::WavReader::open(path).map_err(|e| format!("failed to open WAV file: {e}"))?;
     let spec = reader.spec();
     let file_sample_rate = spec.sample_rate;
+    let channels = spec.channels as usize;
 
     let all_samples_i16: Vec<i16> = match spec.sample_format {
         hound::SampleFormat::Int => reader
@@ -297,6 +298,19 @@ pub fn load_wav(path: &Path, max_duration_secs: Option<u64>) -> Result<LoadedAud
             .collect(),
     };
 
+    // Downmix to mono if multi-channel (average all channels per sample)
+    let all_samples_i16 = if channels > 1 {
+        all_samples_i16
+            .chunks(channels)
+            .map(|ch| {
+                let sum: i32 = ch.iter().map(|&s| s as i32).sum();
+                (sum / channels as i32) as i16
+            })
+            .collect()
+    } else {
+        all_samples_i16
+    };
+
     // Determine if resampling is needed
     let needs_resampling = !is_supported_sample_rate(file_sample_rate);
     let effective_sample_rate = if needs_resampling {
@@ -307,6 +321,7 @@ pub fn load_wav(path: &Path, max_duration_secs: Option<u64>) -> Result<LoadedAud
 
     tracing::info!(
         file_sample_rate,
+        channels,
         effective_sample_rate,
         needs_resampling,
         "loading WAV file"

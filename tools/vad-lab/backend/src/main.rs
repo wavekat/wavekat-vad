@@ -5,12 +5,14 @@ mod spectrum;
 mod ws;
 
 use axum::{
-    extract::WebSocketUpgrade,
-    response::{Html, IntoResponse},
-    routing::get,
+    extract::{Multipart, WebSocketUpgrade},
+    http::StatusCode,
+    response::{Html, IntoResponse, Json},
+    routing::{get, post},
     Router,
 };
 use clap::Parser;
+use serde_json::json;
 use tower_http::cors::CorsLayer;
 
 #[derive(Parser)]
@@ -38,6 +40,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/upload", post(upload_handler))
         .route("/", get(index_handler))
         .layer(CorsLayer::permissive());
 
@@ -51,6 +54,58 @@ async fn main() {
 
 async fn ws_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(ws::handle_ws)
+}
+
+async fn upload_handler(mut multipart: Multipart) -> Result<Json<serde_json::Value>, StatusCode> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to read multipart: {e}");
+            StatusCode::BAD_REQUEST
+        })?
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let file_name = field
+        .file_name()
+        .unwrap_or("upload.wav")
+        .to_string();
+
+    // Only accept .wav files
+    if !file_name.to_lowercase().ends_with(".wav") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let data = field.bytes().await.map_err(|e| {
+        tracing::error!("failed to read upload: {e}");
+        StatusCode::BAD_REQUEST
+    })?;
+
+    // Save to temp directory with a unique name
+    let temp_dir = std::env::temp_dir().join("vad-lab-uploads");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| {
+        tracing::error!("failed to create temp dir: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let dest = temp_dir.join(format!(
+        "{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        file_name
+    ));
+
+    std::fs::write(&dest, &data).map_err(|e| {
+        tracing::error!("failed to write upload: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let path_str = dest.to_string_lossy().to_string();
+    tracing::info!(path = %path_str, size = data.len(), "file uploaded");
+
+    Ok(Json(json!({ "path": path_str })))
 }
 
 async fn index_handler() -> Html<&'static str> {

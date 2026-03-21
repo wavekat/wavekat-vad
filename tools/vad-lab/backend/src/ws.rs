@@ -326,109 +326,139 @@ pub async fn handle_ws(socket: WebSocket) {
             }
 
             ClientMessage::LoadFile { path } => {
-                let (audio_tx, _) = broadcast::channel::<AudioFrame>(256);
+                // Load the WAV file (read + resample + truncate) — fast, no playback
+                let file_path = std::path::Path::new(&path);
+                let max_duration = Some(default_max_duration_secs());
+                let loaded = match audio_source::load_wav(file_path, max_duration) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        let _ = ws_tx
+                            .send(send_msg(&ServerMessage::Error { message: e }))
+                            .await;
+                        continue;
+                    }
+                };
 
+                let sample_rate = loaded.sample_rate;
+
+                // Notify client of sample rate and spectrum info
+                let _ = ws_tx
+                    .send(send_msg(&ServerMessage::RecordingStarted {
+                        sample_rate,
+                        spectrum_bins,
+                    }))
+                    .await;
+
+                // Broadcast channel large enough for all frames (no lag)
+                let samples_per_frame =
+                    sample_rate as usize * frame_duration_ms as usize / 1000;
+                let total_frames = loaded.samples.len() / samples_per_frame.max(1) + 16;
+                let (audio_tx, _) =
+                    broadcast::channel::<AudioFrame>(total_frames.max(16));
+
+                // Start pipeline BEFORE emitting frames so it receives everything
                 let pipeline_rx = audio_tx.subscribe();
-                let mut forward_rx = audio_tx.subscribe();
+                let result_rx =
+                    pipeline::run_pipeline(configs.clone(), pipeline_rx, sample_rate);
 
+                // Emit all frames at full speed (no sleep)
+                audio_source::emit_frames(
+                    &loaded.samples,
+                    sample_rate,
+                    frame_duration_ms,
+                    &audio_tx,
+                );
+                // Drop sender so pipeline knows the stream is finished
+                drop(audio_tx);
+
+                // Collect messages from audio + pipeline into one channel
                 let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ServerMessage>(512);
 
-                // Forward audio frames and spectrum to client
+                // Task 1: Send audio + spectrum frames
                 let msg_tx_audio = msg_tx.clone();
                 let bins = spectrum_bins;
+                let file_samples = loaded.samples;
+                let sr = sample_rate;
+                let spf = samples_per_frame;
                 tokio::spawn(async move {
                     let mut analyzer = SpectrumAnalyzer::with_bins(bins);
-                    while let Ok(frame) = forward_rx.recv().await {
-                        // Send audio samples
+                    let sample_rate_f = sr as f64;
+                    let mut total_samples: u64 = 0;
+
+                    for chunk in file_samples.chunks(spf) {
+                        let timestamp_ms = (total_samples as f64 / sample_rate_f) * 1000.0;
+
                         let audio_msg = ServerMessage::Audio {
-                            timestamp_ms: frame.timestamp_ms,
-                            samples: frame.samples.clone(),
+                            timestamp_ms,
+                            samples: chunk.to_vec(),
                         };
                         if msg_tx_audio.send(audio_msg).await.is_err() {
                             break;
                         }
 
-                        // Compute and send spectrum
-                        let magnitudes = analyzer.compute(&frame.samples);
+                        let magnitudes = analyzer.compute(chunk);
                         let spectrum_msg = ServerMessage::Spectrum {
-                            timestamp_ms: frame.timestamp_ms,
+                            timestamp_ms,
                             magnitudes,
                         };
                         if msg_tx_audio.send(spectrum_msg).await.is_err() {
                             break;
                         }
+
+                        total_samples += chunk.len() as u64;
                     }
                 });
 
-                // Play file and run pipeline
-                let configs_clone = configs.clone();
-                let msg_tx_done = msg_tx;
-                let file_bins = spectrum_bins;
+                // Task 2: Forward VAD + preprocessed results
+                let msg_tx_vad = msg_tx;
+                let vad_bins = spectrum_bins;
+                let mut result_rx = result_rx;
                 tokio::spawn(async move {
-                    let file_path = std::path::Path::new(&path);
-                    match audio_source::play_file(file_path, frame_duration_ms, audio_tx).await {
-                        Ok(sample_rate) => {
-                            let mut result_rx =
-                                pipeline::run_pipeline(configs_clone, pipeline_rx, sample_rate);
+                    let mut analyzers: std::collections::HashMap<String, SpectrumAnalyzer> =
+                        std::collections::HashMap::new();
 
-                            // Per-config spectrum analyzers
-                            let mut analyzers: std::collections::HashMap<String, SpectrumAnalyzer> =
-                                std::collections::HashMap::new();
-
-                            while let Some(result) = result_rx.recv().await {
-                                // Send VAD result
-                                let vad_msg = ServerMessage::Vad {
-                                    config_id: result.config_id.clone(),
-                                    timestamp_ms: result.timestamp_ms,
-                                    probability: result.probability,
-                                };
-                                if msg_tx_done.send(vad_msg).await.is_err() {
-                                    break;
-                                }
-
-                                // Send preprocessed audio
-                                let audio_msg = ServerMessage::PreprocessedAudio {
-                                    config_id: result.config_id.clone(),
-                                    timestamp_ms: result.timestamp_ms,
-                                    samples: result.preprocessed_samples.clone(),
-                                };
-                                if msg_tx_done.send(audio_msg).await.is_err() {
-                                    break;
-                                }
-
-                                // Compute and send preprocessed spectrum
-                                let analyzer = analyzers
-                                    .entry(result.config_id.clone())
-                                    .or_insert_with(|| SpectrumAnalyzer::with_bins(file_bins));
-                                let magnitudes = analyzer.compute(&result.preprocessed_samples);
-                                let spectrum_msg = ServerMessage::PreprocessedSpectrum {
-                                    config_id: result.config_id,
-                                    timestamp_ms: result.timestamp_ms,
-                                    magnitudes,
-                                };
-                                if msg_tx_done.send(spectrum_msg).await.is_err() {
-                                    break;
-                                }
-                            }
-                            let _ = msg_tx_done.send(ServerMessage::Done).await;
+                    while let Some(result) = result_rx.recv().await {
+                        let vad_msg = ServerMessage::Vad {
+                            config_id: result.config_id.clone(),
+                            timestamp_ms: result.timestamp_ms,
+                            probability: result.probability,
+                        };
+                        if msg_tx_vad.send(vad_msg).await.is_err() {
+                            break;
                         }
-                        Err(e) => {
-                            let _ = msg_tx_done.send(ServerMessage::Error { message: e }).await;
+
+                        let audio_msg = ServerMessage::PreprocessedAudio {
+                            config_id: result.config_id.clone(),
+                            timestamp_ms: result.timestamp_ms,
+                            samples: result.preprocessed_samples.clone(),
+                        };
+                        if msg_tx_vad.send(audio_msg).await.is_err() {
+                            break;
+                        }
+
+                        let pp_analyzer = analyzers
+                            .entry(result.config_id.clone())
+                            .or_insert_with(|| SpectrumAnalyzer::with_bins(vad_bins));
+                        let magnitudes = pp_analyzer.compute(&result.preprocessed_samples);
+                        let spectrum_msg = ServerMessage::PreprocessedSpectrum {
+                            config_id: result.config_id,
+                            timestamp_ms: result.timestamp_ms,
+                            magnitudes,
+                        };
+                        if msg_tx_vad.send(spectrum_msg).await.is_err() {
+                            break;
                         }
                     }
                 });
 
-                // Stream results to client
+                // Stream interleaved results to client;
+                // Done when both tasks finish (all senders dropped)
                 while let Some(msg) = msg_rx.recv().await {
-                    let is_terminal =
-                        matches!(msg, ServerMessage::Done | ServerMessage::Error { .. });
                     if ws_tx.send(send_msg(&msg)).await.is_err() {
                         break;
                     }
-                    if is_terminal {
-                        break;
-                    }
                 }
+                let _ = ws_tx.send(send_msg(&ServerMessage::Done)).await;
             }
         }
     }

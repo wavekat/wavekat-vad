@@ -33,6 +33,7 @@ import {
 const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 const MAX_LOG_ENTRIES = 500;
 const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
+const MAX_UPLOAD_SIZE_MB = 100;
 
 interface SpectrumFrame {
   timestamp_ms: number;
@@ -42,8 +43,11 @@ interface SpectrumFrame {
 function App() {
   const socketRef = useRef<VadLabSocket | null>(null);
   const waveformContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(800);
+  const [uploading, setUploading] = useState(false);
+  const [loadingFile, setLoadingFile] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [backends, setBackends] = useState<Record<string, ParamInfo[]>>({});
@@ -194,9 +198,11 @@ function App() {
       case "done":
         recordingRef.current = false;
         setRecording(false);
+        setLoadingFile(false);
         break;
 
       case "error":
+        setLoadingFile(false);
         break;
     }
   }, []);
@@ -268,6 +274,52 @@ function App() {
     setRecording(false);
   };
 
+  const handleFileUpload = async (file: File) => {
+    const socket = socketRef.current;
+    if (!socket || !connected) return;
+
+    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      addLog({ timestamp: new Date(), direction: "system", summary: `File too large (max ${MAX_UPLOAD_SIZE_MB}MB)` });
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        addLog({ timestamp: new Date(), direction: "system", summary: `Upload failed: ${res.statusText}` });
+        return;
+      }
+
+      const { path } = await res.json();
+
+      // Reset state for new file
+      setSamples([]);
+      setSpectrumData([]);
+      setVadResults({});
+      setPreprocessedSamples({});
+      setPreprocessedSpectrumData({});
+      setPlaybackSource("original");
+      setTotalDurationMs(0);
+      setSampleRate(null);
+      setViewport({ viewStartMs: 0, viewDurationMs: calculateViewDuration(containerWidth) });
+
+      socket.send({ type: "set_configs", configs });
+      socket.send({ type: "load_file", path });
+      setLoadingFile(true);
+    } catch (e) {
+      addLog({ timestamp: new Date(), direction: "system", summary: `Upload error: ${e}` });
+    } finally {
+      setUploading(false);
+      // Reset input so the same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleSpectrumBinsChange = useCallback((bins: number) => {
     setSpectrumBins(bins);
     socketRef.current?.send({ type: "set_spectrum_bins", bins });
@@ -319,9 +371,32 @@ function App() {
           Refresh
         </Button>
 
-        {!recording ? (
-          <Button onClick={startRecording} disabled={!connected || configs.length === 0}>
-            Record
+        {!recording && !loadingFile ? (
+          <>
+            <Button onClick={startRecording} disabled={!connected || configs.length === 0}>
+              Record
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".wav,audio/wav"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileUpload(file);
+              }}
+            />
+            <Button
+              variant="outline"
+              disabled={!connected || configs.length === 0 || uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? "Uploading..." : "Upload WAV"}
+            </Button>
+          </>
+        ) : loadingFile ? (
+          <Button variant="outline" disabled>
+            Processing...
           </Button>
         ) : (
           <Button variant="destructive" onClick={stopRecording}>
@@ -330,7 +405,7 @@ function App() {
         )}
 
         {/* Playback controls */}
-        {!recording && samples.length > 0 && (
+        {!recording && !loadingFile && samples.length > 0 && (
           <>
             <div className="w-px h-6 bg-border" />
             <Select value={playbackSource} onValueChange={(v) => { if (v) { playback.stop(); setPlaybackSource(v); } }}>

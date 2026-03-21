@@ -16,6 +16,28 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    // docs.rs builds with --network none, so we can't download models.
+    // Write empty placeholder files so include_bytes! compiles.
+    if env::var("DOCS_RS").is_ok() {
+        #[cfg(feature = "silero")]
+        {
+            let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
+            let model_path = Path::new(&out_dir).join("silero_vad.onnx");
+            if !model_path.exists() {
+                fs::write(&model_path, b"").expect("failed to write placeholder model");
+            }
+        }
+        #[cfg(feature = "ten-vad")]
+        {
+            let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
+            let model_path = Path::new(&out_dir).join("ten-vad.onnx");
+            if !model_path.exists() {
+                fs::write(&model_path, b"").expect("failed to write placeholder model");
+            }
+        }
+        return;
+    }
+
     #[cfg(feature = "silero")]
     setup_silero_model();
 

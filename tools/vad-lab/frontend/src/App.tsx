@@ -423,18 +423,29 @@ function App() {
           </Button>
         )}
 
-        {/* Channel selector for stereo files */}
-        {fileChannels > 1 && loadedFilePath && !recording && !loadingFile && (
-          <Select value={selectedChannel} onValueChange={(v) => { if (v) handleChannelChange(v as "mixed" | "left" | "right"); }}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mixed">Mixed (L+R)</SelectItem>
-              <SelectItem value="left">Left only</SelectItem>
-              <SelectItem value="right">Right only</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Channel selector and re-process for loaded files */}
+        {loadedFilePath && !recording && !loadingFile && (
+          <>
+            {fileChannels > 1 && (
+              <Select value={selectedChannel} onValueChange={(v) => { if (v) handleChannelChange(v as "mixed" | "left" | "right"); }}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mixed">Mixed (L+R)</SelectItem>
+                  <SelectItem value="left">Left only</SelectItem>
+                  <SelectItem value="right">Right only</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <Button
+              variant="outline"
+              disabled={!connected || configs.length === 0}
+              onClick={() => loadFile(loadedFilePath, selectedChannel)}
+            >
+              Re-process
+            </Button>
+          </>
         )}
 
         {/* Playback controls */}

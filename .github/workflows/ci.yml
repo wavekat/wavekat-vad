@@ -42,8 +42,8 @@ jobs:
 
   accuracy:
     runs-on: ubuntu-latest
-    # Only run on release PRs (labeled by release-plz)
-    if: contains(github.event.pull_request.labels.*.name, 'release')
+    # Only run on release PRs (branch created by release-plz)
+    if: startsWith(github.head_ref, 'release-plz')
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

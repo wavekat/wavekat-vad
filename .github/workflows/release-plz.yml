@@ -51,8 +51,8 @@ jobs:
         id: check-pr
         if: steps.release-plz.outputs.prs_created == 'true'
         run: |
-          PR_BRANCH=$(gh pr list --author 'github-actions[bot]' --label 'release' \
-            --json headRefName --jq '.[0].headRefName')
+          PR_BRANCH=$(gh pr list --author 'github-actions[bot]' \
+            --json headRefName --jq '[.[] | select(.headRefName | startswith("release-plz"))][0].headRefName')
           if [ -n "$PR_BRANCH" ]; then
             echo "branch=$PR_BRANCH" >> "$GITHUB_OUTPUT"
             echo "Found release PR branch: $PR_BRANCH"

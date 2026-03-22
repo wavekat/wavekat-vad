@@ -96,17 +96,22 @@ fn download_file(url: &str, dest: &Path) {
 
 fn download_testset() -> PathBuf {
     let dir = testset_dir();
-    for i in 1..=NUM_FILES {
-        let name = format!("testset-audio-{i:02}");
-        download_file(
-            &format!("{TESTSET_URL}/{name}.wav"),
-            &dir.join(format!("{name}.wav")),
-        );
-        download_file(
-            &format!("{TESTSET_URL}/{name}.scv"),
-            &dir.join(format!("{name}.scv")),
-        );
-    }
+    std::thread::scope(|s| {
+        for i in 1..=NUM_FILES {
+            let dir = &dir;
+            s.spawn(move || {
+                let name = format!("testset-audio-{i:02}");
+                download_file(
+                    &format!("{TESTSET_URL}/{name}.wav"),
+                    &dir.join(format!("{name}.wav")),
+                );
+                download_file(
+                    &format!("{TESTSET_URL}/{name}.scv"),
+                    &dir.join(format!("{name}.scv")),
+                );
+            });
+        }
+    });
     dir
 }
 

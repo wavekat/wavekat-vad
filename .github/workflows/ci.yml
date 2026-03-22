@@ -54,17 +54,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}" 2>&1 | tee test-output.txt
-      - name: Job summary
-        if: always()
-        run: |
-          FEATURES="${{ matrix.features }}"
-          echo "## Features: \`${FEATURES:-none}\`" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f test-output.txt ]; then
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            grep -E '^test result:|^running' test-output.txt >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
+        run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}"
 
   accuracy:
     runs-on: ubuntu-latest

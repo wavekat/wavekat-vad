@@ -261,7 +261,9 @@ fn accuracy_report() {
     );
 
     // Print markdown table (CI parses this to update README)
+    let version = env!("CARGO_PKG_VERSION");
     println!();
+    println!("BENCHMARK_VERSION={version}");
     println!("| Backend | Precision | Recall | F1 Score | Frame Size | Avg Inference |");
     println!("|---------|-----------|--------|----------|------------|---------------|");
     for r in &results {

@@ -281,7 +281,7 @@ fn evaluate_backend(
 fn accuracy_report() {
     let testset_dir = download_testset();
     let baselines = load_baselines();
-    let mut results = Vec::new();
+    let mut results: Vec<BackendResult> = Vec::new();
 
     #[cfg(feature = "webrtc")]
     {
@@ -372,6 +372,7 @@ fn accuracy_report() {
 /// Run via: `make accuracy-update-baseline`
 #[test]
 #[ignore]
+#[allow(unused_variables, unused_mut)]
 fn accuracy_update_baseline() {
     let testset_dir = download_testset();
     let mut baselines = load_baselines();

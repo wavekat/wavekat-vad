@@ -16,6 +16,8 @@ interface VadTimelineProps {
   /** Optional config to display backend and parameter info */
   config?: VadConfig;
   results: Array<{ timestamp_ms: number; probability: number }>;
+  /** Real-Time Factor (processing_time / audio_duration). Lower is better. */
+  rtf?: number | null;
   totalDurationMs: number;
   viewport: Viewport;
   width?: number;
@@ -60,6 +62,7 @@ export function VadTimeline({
   label,
   config,
   results,
+  rtf,
   totalDurationMs,
   viewport,
   width = 800,
@@ -252,6 +255,11 @@ export function VadTimeline({
         {config && (
           <span className="text-xs text-muted-foreground font-mono">
             {formatConfigSummary(config)}
+          </span>
+        )}
+        {rtf != null && (
+          <span className="text-xs text-muted-foreground font-mono ml-auto">
+            RTF {rtf.toFixed(4)}
           </span>
         )}
       </div>

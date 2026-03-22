@@ -63,6 +63,10 @@ function App() {
   const [vadResults, setVadResults] = useState<
     Record<string, Array<{ timestamp_ms: number; probability: number }>>
   >({});
+  // Cumulative inference timing per config for RTF computation
+  const [vadTiming, setVadTiming] = useState<
+    Record<string, { totalInferenceUs: number; totalAudioMs: number }>
+  >({});
   const [totalDurationMs, setTotalDurationMs] = useState(0);
   const [sampleRate, setSampleRate] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -179,6 +183,16 @@ function App() {
             { timestamp_ms: msg.timestamp_ms, probability: msg.probability },
           ],
         }));
+        setVadTiming((prev) => {
+          const existing = prev[msg.config_id] ?? { totalInferenceUs: 0, totalAudioMs: 0 };
+          return {
+            ...prev,
+            [msg.config_id]: {
+              totalInferenceUs: existing.totalInferenceUs + msg.inference_us,
+              totalAudioMs: existing.totalAudioMs + msg.frame_duration_ms,
+            },
+          };
+        });
         break;
 
       case "preprocessed_audio":
@@ -247,6 +261,7 @@ function App() {
     setSamples([]);
     setSpectrumData([]);
     setVadResults({});
+    setVadTiming({});
     setPreprocessedSamples({});
     setPreprocessedSpectrumData({});
     setPlaybackSource("original");
@@ -286,6 +301,7 @@ function App() {
     setSamples([]);
     setSpectrumData([]);
     setVadResults({});
+    setVadTiming({});
     setPreprocessedSamples({});
     setPreprocessedSpectrumData({});
     setPlaybackSource("original");
@@ -577,12 +593,18 @@ function App() {
         {configs.length > 0 && (
           <h3 className="text-sm font-medium pt-2">VAD Results</h3>
         )}
-        {configs.map((config, i) => (
+        {configs.map((config, i) => {
+          const timing = vadTiming[config.id];
+          const rtf = timing && timing.totalAudioMs > 0
+            ? (timing.totalInferenceUs / 1000) / timing.totalAudioMs
+            : null;
+          return (
           <VadTimeline
             key={config.id}
             label={config.label}
             config={config}
             results={vadResults[config.id] ?? []}
+            rtf={rtf}
             totalDurationMs={totalDurationMs}
             viewport={viewport}
             width={containerWidth}
@@ -593,7 +615,8 @@ function App() {
             recording={recording}
             playheadMs={!recording && playback.canPlay ? playback.state.positionMs : null}
           />
-        ))}
+          );
+        })}
 
         {/* Preprocessed Waveforms/Spectrograms/VAD - only for configs with showPreprocessed enabled */}
         {configs.filter((c) => showPreprocessed[c.id]).map((config) => {

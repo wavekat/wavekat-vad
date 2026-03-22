@@ -47,7 +47,7 @@ Performance measured against the [TEN-VAD testset](https://github.com/TEN-framew
 | TEN-VAD | 0.942 | 0.915 | 0.928 | 256 (16 ms) | 34.6 µs |
 <!-- benchmark-table-end -->
 
-> Measured with `--release` on GitHub Actions. Run locally: `make accuracy` or `make bench`
+> Accuracy metrics are deterministic; inference times are approximate and vary by hardware. Measured with `--release` on GitHub Actions `ubuntu-latest` runners. Run locally: `make accuracy` or `make bench`
 
 ### WebRTC
 

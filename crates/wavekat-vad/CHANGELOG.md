@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/wavekat/wavekat-vad/compare/v0.1.4...v0.1.5) - 2026-03-22
+
+### Added
+
+- add accuracy benchmarks ([#21](https://github.com/wavekat/wavekat-vad/pull/21))
+
+### Fixed
+
+- release PR branch detection ([#25](https://github.com/wavekat/wavekat-vad/pull/25))
+
 ## [0.1.4](https://github.com/wavekat/wavekat-vad/compare/v0.1.3...v0.1.4) - 2026-03-21
 
 ### Fixed

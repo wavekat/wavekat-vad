@@ -2,6 +2,7 @@ use crate::audio_source::AudioFrame;
 use crate::session::VadConfig;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::time::Instant;
 use tokio::sync::{broadcast, mpsc};
 use wavekat_vad::preprocessing::Preprocessor;
 use wavekat_vad::{FrameAdapter, VoiceActivityDetector};
@@ -15,6 +16,10 @@ pub struct PipelineResult {
     pub timestamp_ms: f64,
     /// Speech probability (0.0 - 1.0).
     pub probability: f32,
+    /// Inference time in microseconds for this frame.
+    pub inference_us: f64,
+    /// Frame duration in milliseconds (from backend capabilities).
+    pub frame_duration_ms: u32,
     /// Preprocessed audio samples (for visualization).
     #[serde(skip_serializing)]
     pub preprocessed_samples: Vec<i16>,
@@ -68,6 +73,7 @@ pub fn run_pipeline(
         );
 
         let config_id = config.id.clone();
+        let frame_duration_ms = adapter.capabilities().frame_duration_ms;
         let mut audio_rx = audio_tx.subscribe();
         let result_tx = result_tx.clone();
 
@@ -84,13 +90,23 @@ pub fn run_pipeline(
                 let preprocessed_samples = preprocessor.process(&samples);
 
                 // Run VAD on preprocessed audio (adapter handles frame buffering)
+                let start = Instant::now();
                 match adapter.process_all(&preprocessed_samples, effective_rate) {
                     Ok(probabilities) => {
+                        let elapsed_us = start.elapsed().as_secs_f64() * 1_000_000.0;
+                        // Distribute total time evenly across produced frames
+                        let per_frame_us = if probabilities.is_empty() {
+                            0.0
+                        } else {
+                            elapsed_us / probabilities.len() as f64
+                        };
                         for probability in probabilities {
                             let result = PipelineResult {
                                 config_id: config_id.clone(),
                                 timestamp_ms: frame.timestamp_ms,
                                 probability,
+                                inference_us: per_frame_us,
+                                frame_duration_ms,
                                 preprocessed_samples: preprocessed_samples.clone(),
                             };
                             if result_tx.send(result).await.is_err() {

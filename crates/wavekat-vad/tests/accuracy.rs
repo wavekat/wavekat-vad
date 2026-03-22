@@ -172,7 +172,10 @@ fn read_wav_i16(path: &Path) -> (Vec<i16>, u32) {
 // ---------------------------------------------------------------------------
 
 struct BackendResult {
-    name: String,
+    /// Feature-flag name used as baseline key (e.g. "webrtc", "silero", "ten-vad").
+    id: String,
+    /// Human-readable name for table output (e.g. "WebRTC", "Silero", "TEN-VAD").
+    display: String,
     precision: f32,
     recall: f32,
     f1: f32,
@@ -182,7 +185,8 @@ struct BackendResult {
 }
 
 fn evaluate_backend(
-    name: &str,
+    id: &str,
+    display: &str,
     vad: &mut dyn VoiceActivityDetector,
     testset_dir: &Path,
 ) -> BackendResult {
@@ -252,12 +256,13 @@ fn evaluate_backend(
     };
 
     eprintln!(
-        "{name}: P={precision:.3} R={recall:.3} F1={f1:.3} \
+        "{display}: P={precision:.3} R={recall:.3} F1={f1:.3} \
          frames={total_frames} avg={avg_frame_us:.1}µs"
     );
 
     BackendResult {
-        name: name.to_string(),
+        id: id.to_string(),
+        display: display.to_string(),
         precision,
         recall,
         f1,
@@ -282,21 +287,26 @@ fn accuracy_report() {
     {
         use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
         let mut vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
-        results.push(evaluate_backend("WebRTC", &mut vad, &testset_dir));
+        results.push(evaluate_backend("webrtc", "WebRTC", &mut vad, &testset_dir));
     }
 
     #[cfg(feature = "silero")]
     {
         use wavekat_vad::backends::silero::SileroVad;
         let mut vad = SileroVad::new(16000).unwrap();
-        results.push(evaluate_backend("Silero", &mut vad, &testset_dir));
+        results.push(evaluate_backend("silero", "Silero", &mut vad, &testset_dir));
     }
 
     #[cfg(feature = "ten-vad")]
     {
         use wavekat_vad::backends::ten_vad::TenVad;
         let mut vad = TenVad::new().unwrap();
-        results.push(evaluate_backend("TEN-VAD", &mut vad, &testset_dir));
+        results.push(evaluate_backend(
+            "ten-vad",
+            "TEN-VAD",
+            &mut vad,
+            &testset_dir,
+        ));
     }
 
     assert!(
@@ -313,7 +323,7 @@ fn accuracy_report() {
     for r in &results {
         println!(
             "| {} | {:.3} | {:.3} | {:.3} | {} ({} ms) | {:.1} µs |",
-            r.name, r.precision, r.recall, r.f1, r.frame_size, r.frame_ms, r.avg_frame_us,
+            r.display, r.precision, r.recall, r.f1, r.frame_size, r.frame_ms, r.avg_frame_us,
         );
     }
     println!();
@@ -321,7 +331,7 @@ fn accuracy_report() {
     // Check each backend against baseline
     let mut regressions = Vec::new();
     for r in &results {
-        if let Some(baseline) = baselines.get(&r.name) {
+        if let Some(baseline) = baselines.get(&r.id) {
             let checks = [
                 ("precision", r.precision, baseline.precision),
                 ("recall", r.recall, baseline.recall),
@@ -331,7 +341,7 @@ fn accuracy_report() {
                 if current < best - REGRESSION_TOLERANCE {
                     regressions.push(format!(
                         "{} {metric} regressed: {current:.3} < {best:.3} (baseline)",
-                        r.name
+                        r.display
                     ));
                 }
             }
@@ -339,13 +349,13 @@ fn accuracy_report() {
             if r.f1 > baseline.f1 + REGRESSION_TOLERANCE {
                 eprintln!(
                     "  {} F1 improved: {:.3} → {:.3} (run `make accuracy-update-baseline` to save)",
-                    r.name, baseline.f1, r.f1
+                    r.display, baseline.f1, r.f1
                 );
             }
         } else {
             eprintln!(
                 "  {} has no baseline — run `make accuracy-update-baseline` to add it",
-                r.name
+                r.display
             );
         }
     }
@@ -370,7 +380,7 @@ fn accuracy_update_baseline() {
     {
         use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
         let mut vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
-        let r = evaluate_backend("WebRTC", &mut vad, &testset_dir);
+        let r = evaluate_backend("webrtc", "WebRTC", &mut vad, &testset_dir);
         update_baseline(&mut baselines, &r);
     }
 
@@ -378,7 +388,7 @@ fn accuracy_update_baseline() {
     {
         use wavekat_vad::backends::silero::SileroVad;
         let mut vad = SileroVad::new(16000).unwrap();
-        let r = evaluate_backend("Silero", &mut vad, &testset_dir);
+        let r = evaluate_backend("silero", "Silero", &mut vad, &testset_dir);
         update_baseline(&mut baselines, &r);
     }
 
@@ -386,7 +396,7 @@ fn accuracy_update_baseline() {
     {
         use wavekat_vad::backends::ten_vad::TenVad;
         let mut vad = TenVad::new().unwrap();
-        let r = evaluate_backend("TEN-VAD", &mut vad, &testset_dir);
+        let r = evaluate_backend("ten-vad", "TEN-VAD", &mut vad, &testset_dir);
         update_baseline(&mut baselines, &r);
     }
 
@@ -395,7 +405,7 @@ fn accuracy_update_baseline() {
 }
 
 fn update_baseline(baselines: &mut HashMap<String, Baseline>, result: &BackendResult) {
-    let entry = baselines.entry(result.name.clone()).or_insert(Baseline {
+    let entry = baselines.entry(result.id.clone()).or_insert(Baseline {
         precision: 0.0,
         recall: 0.0,
         f1: 0.0,
@@ -418,9 +428,9 @@ fn update_baseline(baselines: &mut HashMap<String, Baseline>, result: &BackendRe
     if updated {
         eprintln!(
             "  {} baseline raised → P={:.3} R={:.3} F1={:.3}",
-            result.name, entry.precision, entry.recall, entry.f1
+            result.display, entry.precision, entry.recall, entry.f1
         );
     } else {
-        eprintln!("  {} baseline unchanged", result.name);
+        eprintln!("  {} baseline unchanged", result.display);
     }
 }

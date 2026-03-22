@@ -57,6 +57,16 @@ jobs:
             echo "Found release PR branch: $PR_BRANCH"
           fi
 
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Release PR" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.release-plz.outputs.prs_created }}" = "true" ]; then
+            echo "Release PR created on branch: \`${{ steps.check-pr.outputs.branch }}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No release PR created." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   update-benchmarks:
     needs: release-plz-pr
     if: needs.release-plz-pr.outputs.pr-branch
@@ -138,3 +148,16 @@ jobs:
           git diff --cached --quiet && echo "No benchmark changes to commit" && exit 0
           git commit -m "docs: update benchmark table"
           git push
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Update Benchmarks" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch: \`${{ needs.release-plz-pr.outputs.pr-branch }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f accuracy-output.txt ]; then
+            TABLE=$(grep '^|' accuracy-output.txt || true)
+            if [ -n "$TABLE" ]; then
+              echo "### Accuracy Results" >> "$GITHUB_STEP_SUMMARY"
+              echo "$TABLE" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi

@@ -75,6 +75,17 @@ jobs:
               print(table)
           PYEOF
 
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## VAD Accuracy Report" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f accuracy-output.txt ]; then
+            TABLE=$(grep '^|' accuracy-output.txt || true)
+            if [ -n "$TABLE" ]; then
+              echo "$TABLE" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
       - name: Create PR with updated benchmarks
         uses: peter-evans/create-pull-request@v6
         with:

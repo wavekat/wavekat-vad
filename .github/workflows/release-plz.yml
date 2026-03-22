@@ -47,18 +47,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Find release PR branch
+      - name: Extract release PR branch
         id: check-pr
         if: steps.release-plz.outputs.prs_created == 'true'
         run: |
-          PR_BRANCH=$(gh pr list --author 'github-actions[bot]' \
-            --json headRefName --jq '[.[] | select(.headRefName | startswith("release-plz"))][0].headRefName')
-          if [ -n "$PR_BRANCH" ]; then
+          PR_BRANCH=$(echo '${{ steps.release-plz.outputs.pr }}' | jq -r '.head_branch')
+          if [ -n "$PR_BRANCH" ] && [ "$PR_BRANCH" != "null" ]; then
             echo "branch=$PR_BRANCH" >> "$GITHUB_OUTPUT"
             echo "Found release PR branch: $PR_BRANCH"
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-benchmarks:
     needs: release-plz-pr

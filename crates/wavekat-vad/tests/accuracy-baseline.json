@@ -1,0 +1,5 @@
+{
+  "WebRTC": { "precision": 0.821, "recall": 0.983, "f1": 0.895 },
+  "Silero": { "precision": 0.938, "recall": 0.938, "f1": 0.938 },
+  "TEN-VAD": { "precision": 0.942, "recall": 0.915, "f1": 0.928 }
+}

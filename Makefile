@@ -1,4 +1,4 @@
-.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint doc ci bench accuracy
+.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint doc ci bench accuracy accuracy-update-baseline
 
 help:
 	@echo "Available targets:"
@@ -16,6 +16,7 @@ help:
 	@echo "  ci              Run all CI checks locally (fmt, clippy, test, doc, features)"
 	@echo "  bench           Run criterion benchmarks (inference timing)"
 	@echo "  accuracy        Run accuracy test against TEN-VAD testset (downloads ~60 files)"
+	@echo "  accuracy-update-baseline  Update best-score baselines after improvements"
 
 # Install all dependencies
 setup: setup-backend setup-frontend
@@ -81,3 +82,8 @@ bench:
 accuracy:
 	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad" \
 		-- --ignored accuracy_report --nocapture
+
+# Update accuracy-baseline.json with current best scores (only raises, never lowers)
+accuracy-update-baseline:
+	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad" \
+		-- --ignored accuracy_update_baseline --nocapture

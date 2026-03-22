@@ -35,6 +35,7 @@ ureq = { version = "3", optional = true }
 [dev-dependencies]
 criterion = "0.5"
 hound = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [[example]]

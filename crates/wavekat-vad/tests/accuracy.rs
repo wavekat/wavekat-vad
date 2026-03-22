@@ -2,13 +2,21 @@
 //!
 //! Downloads 30 labeled audio files from the TEN-VAD repository and evaluates
 //! all enabled backends on precision, recall, F1 score, and inference speed.
+//! Results are compared against `accuracy-baseline.json` — the test fails if
+//! any metric drops below the best known score.
 //!
 //! Run with:
 //! ```sh
 //! cargo test --release -p wavekat-vad --features webrtc,silero,ten-vad \
 //!     -- --ignored accuracy_report --nocapture
 //! ```
+//!
+//! Update baselines after improvements:
+//! ```sh
+//! make accuracy-update-baseline
+//! ```
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use wavekat_vad::VoiceActivityDetector;
@@ -16,6 +24,41 @@ use wavekat_vad::VoiceActivityDetector;
 const TESTSET_URL: &str = "https://github.com/TEN-framework/ten-vad/raw/main/testset";
 const NUM_FILES: usize = 30;
 const THRESHOLD: f32 = 0.5;
+
+/// Allowed tolerance for score regression (accounts for platform differences).
+const REGRESSION_TOLERANCE: f32 = 0.01;
+
+// ---------------------------------------------------------------------------
+// Baseline loading
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct Baseline {
+    precision: f32,
+    recall: f32,
+    f1: f32,
+}
+
+fn baseline_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("accuracy-baseline.json")
+}
+
+fn load_baselines() -> HashMap<String, Baseline> {
+    let path = baseline_path();
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", path.display()))
+}
+
+fn save_baselines(baselines: &HashMap<String, Baseline>) {
+    let path = baseline_path();
+    let content = serde_json::to_string_pretty(baselines).unwrap();
+    std::fs::write(&path, content + "\n")
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
+}
 
 // ---------------------------------------------------------------------------
 // Testset download & caching
@@ -232,6 +275,7 @@ fn evaluate_backend(
 #[ignore]
 fn accuracy_report() {
     let testset_dir = download_testset();
+    let baselines = load_baselines();
     let mut results = Vec::new();
 
     #[cfg(feature = "webrtc")]
@@ -274,18 +318,109 @@ fn accuracy_report() {
     }
     println!();
 
-    // Assert minimum F1 thresholds — fail the test on accuracy regression
+    // Check each backend against baseline
+    let mut regressions = Vec::new();
     for r in &results {
-        let min_f1 = match r.name.as_str() {
-            "WebRTC" => 0.80,
-            _ => 0.85,
-        };
-        assert!(
-            r.f1 > min_f1,
-            "{} F1 score {:.3} below minimum threshold {:.3}",
-            r.name,
-            r.f1,
-            min_f1,
+        if let Some(baseline) = baselines.get(&r.name) {
+            let checks = [
+                ("precision", r.precision, baseline.precision),
+                ("recall", r.recall, baseline.recall),
+                ("F1", r.f1, baseline.f1),
+            ];
+            for (metric, current, best) in checks {
+                if current < best - REGRESSION_TOLERANCE {
+                    regressions.push(format!(
+                        "{} {metric} regressed: {current:.3} < {best:.3} (baseline)",
+                        r.name
+                    ));
+                }
+            }
+            // Report improvements
+            if r.f1 > baseline.f1 + REGRESSION_TOLERANCE {
+                eprintln!(
+                    "  {} F1 improved: {:.3} → {:.3} (run `make accuracy-update-baseline` to save)",
+                    r.name, baseline.f1, r.f1
+                );
+            }
+        } else {
+            eprintln!(
+                "  {} has no baseline — run `make accuracy-update-baseline` to add it",
+                r.name
+            );
+        }
+    }
+
+    if !regressions.is_empty() {
+        panic!(
+            "Accuracy regression detected:\n  {}",
+            regressions.join("\n  ")
         );
+    }
+}
+
+/// Update accuracy-baseline.json with current scores.
+/// Run via: `make accuracy-update-baseline`
+#[test]
+#[ignore]
+fn accuracy_update_baseline() {
+    let testset_dir = download_testset();
+    let mut baselines = load_baselines();
+
+    #[cfg(feature = "webrtc")]
+    {
+        use wavekat_vad::backends::webrtc::{WebRtcVad, WebRtcVadMode};
+        let mut vad = WebRtcVad::new(16000, WebRtcVadMode::Quality).unwrap();
+        let r = evaluate_backend("WebRTC", &mut vad, &testset_dir);
+        update_baseline(&mut baselines, &r);
+    }
+
+    #[cfg(feature = "silero")]
+    {
+        use wavekat_vad::backends::silero::SileroVad;
+        let mut vad = SileroVad::new(16000).unwrap();
+        let r = evaluate_backend("Silero", &mut vad, &testset_dir);
+        update_baseline(&mut baselines, &r);
+    }
+
+    #[cfg(feature = "ten-vad")]
+    {
+        use wavekat_vad::backends::ten_vad::TenVad;
+        let mut vad = TenVad::new().unwrap();
+        let r = evaluate_backend("TEN-VAD", &mut vad, &testset_dir);
+        update_baseline(&mut baselines, &r);
+    }
+
+    save_baselines(&baselines);
+    eprintln!("Baseline updated: {}", baseline_path().display());
+}
+
+fn update_baseline(baselines: &mut HashMap<String, Baseline>, result: &BackendResult) {
+    let entry = baselines.entry(result.name.clone()).or_insert(Baseline {
+        precision: 0.0,
+        recall: 0.0,
+        f1: 0.0,
+    });
+
+    let mut updated = false;
+    if result.precision > entry.precision {
+        entry.precision = (result.precision * 1000.0).round() / 1000.0;
+        updated = true;
+    }
+    if result.recall > entry.recall {
+        entry.recall = (result.recall * 1000.0).round() / 1000.0;
+        updated = true;
+    }
+    if result.f1 > entry.f1 {
+        entry.f1 = (result.f1 * 1000.0).round() / 1000.0;
+        updated = true;
+    }
+
+    if updated {
+        eprintln!(
+            "  {} baseline raised → P={:.3} R={:.3} F1={:.3}",
+            result.name, entry.precision, entry.recall, entry.f1
+        );
+    } else {
+        eprintln!("  {} baseline unchanged", result.name);
     }
 }

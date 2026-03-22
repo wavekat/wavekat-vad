@@ -38,8 +38,99 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       - uses: release-plz/action@v0.5
+        id: release-plz
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # After release-plz creates/updates the PR, run benchmarks and
+      # push updated README back to the PR branch.
+      - name: Check for release PR
+        id: check-pr
+        if: steps.release-plz.outputs.prs_created == 'true'
+        run: |
+          PR_BRANCH=$(gh pr list --author 'github-actions[bot]' --label 'release' \
+            --json headRefName --jq '.[0].headRefName')
+          if [ -n "$PR_BRANCH" ]; then
+            echo "branch=$PR_BRANCH" >> "$GITHUB_OUTPUT"
+            echo "Found release PR branch: $PR_BRANCH"
+          else
+            echo "No release PR branch found"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run benchmarks on release PR branch
+        if: steps.check-pr.outputs.branch
+        run: |
+          git fetch origin "${{ steps.check-pr.outputs.branch }}"
+          git checkout "${{ steps.check-pr.outputs.branch }}"
+
+          # Cache testset
+          mkdir -p target/testset
+
+          cargo test --release -p wavekat-vad --no-default-features \
+            --features webrtc,silero,ten-vad \
+            -- --ignored accuracy_report --nocapture 2>&1 | tee accuracy-output.txt
+
+      - name: Update README on release PR branch
+        if: steps.check-pr.outputs.branch
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+
+          with open('accuracy-output.txt') as f:
+              output = f.read()
+
+          # Extract version
+          version = None
+          for line in output.split('\n'):
+              if line.startswith('BENCHMARK_VERSION='):
+                  version = line.split('=', 1)[1].strip()
+                  break
+
+          if not version:
+              print("ERROR: No version found in test output")
+              sys.exit(1)
+
+          # Extract markdown table lines
+          lines = output.split('\n')
+          table_lines = [l for l in lines if l.startswith('|')]
+          if len(table_lines) < 3:
+              print("ERROR: No benchmark table found in test output")
+              sys.exit(1)
+
+          table = '\n'.join(table_lines)
+          block = f'*v{version}*\n\n{table}'
+
+          with open('README.md') as f:
+              readme = f.read()
+
+          pattern = r'(<!-- benchmark-table-start -->).*?(<!-- benchmark-table-end -->)'
+          replacement = rf'\1\n{block}\n\2'
+          updated = re.sub(pattern, replacement, readme, flags=re.DOTALL)
+
+          if updated == readme:
+              print("No changes to README benchmarks")
+          else:
+              with open('README.md', 'w') as f:
+                  f.write(updated)
+              print(f"README updated with v{version} benchmarks:")
+              print(table)
+          PYEOF
+
+      - name: Push benchmark update to release PR
+        if: steps.check-pr.outputs.branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet && echo "No benchmark changes to commit" && exit 0
+          git commit -m "docs: update benchmark table"
+          git push origin "${{ steps.check-pr.outputs.branch }}"

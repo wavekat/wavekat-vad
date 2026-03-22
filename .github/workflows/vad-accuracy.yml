@@ -1,0 +1,86 @@
+name: VAD Accuracy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  accuracy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Cache testset
+        uses: actions/cache@v4
+        with:
+          path: target/testset
+          key: ten-vad-testset-v1
+
+      - name: Run accuracy report
+        run: |
+          cargo test --release -p wavekat-vad --no-default-features \
+            --features webrtc,silero,ten-vad \
+            -- --ignored accuracy_report --nocapture 2>&1 | tee accuracy-output.txt
+
+      - name: Update README benchmark table
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+
+          with open('accuracy-output.txt') as f:
+              output = f.read()
+
+          version = None
+          for line in output.split('\n'):
+              if line.startswith('BENCHMARK_VERSION='):
+                  version = line.split('=', 1)[1].strip()
+                  break
+
+          if not version:
+              print("ERROR: No version found in test output")
+              sys.exit(1)
+
+          lines = output.split('\n')
+          table_lines = [l for l in lines if l.startswith('|')]
+          if len(table_lines) < 3:
+              print("ERROR: No benchmark table found in test output")
+              sys.exit(1)
+
+          table = '\n'.join(table_lines)
+          block = f'*v{version}*\n\n{table}'
+
+          with open('README.md') as f:
+              readme = f.read()
+
+          pattern = r'(<!-- benchmark-table-start -->).*?(<!-- benchmark-table-end -->)'
+          replacement = rf'\1\n{block}\n\2'
+          updated = re.sub(pattern, replacement, readme, flags=re.DOTALL)
+
+          if updated == readme:
+              print("No changes to README")
+          else:
+              with open('README.md', 'w') as f:
+                  f.write(updated)
+              print(f"README updated with v{version} benchmarks:")
+              print(table)
+          PYEOF
+
+      - name: Create PR with updated benchmarks
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "docs: update benchmark table"
+          title: "docs: update benchmark table"
+          body: |
+            Auto-generated benchmark update from the VAD accuracy test suite.
+          branch: docs/update-benchmarks
+          delete-branch: true

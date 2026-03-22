@@ -39,3 +39,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}"
+
+  accuracy:
+    runs-on: ubuntu-latest
+    # Only run on release PRs (branch created by release-plz)
+    if: startsWith(github.head_ref, 'release-plz')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache testset
+        uses: actions/cache@v4
+        with:
+          path: target/testset
+          key: ten-vad-testset-v1
+      - name: Run accuracy regression check
+        run: |
+          cargo test --release -p wavekat-vad --no-default-features \
+            --features webrtc,silero,ten-vad \
+            -- --ignored accuracy_report --nocapture

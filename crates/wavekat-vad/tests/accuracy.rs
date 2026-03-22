@@ -332,8 +332,7 @@ fn accuracy_report() {
     for r in &results {
         println!(
             "| {} | {:.3} | {:.3} | {:.3} | {} ({} ms) | {:.1} µs | {:.4} |",
-            r.display, r.precision, r.recall, r.f1, r.frame_size, r.frame_ms, r.avg_frame_us,
-            r.rtf,
+            r.display, r.precision, r.recall, r.f1, r.frame_size, r.frame_ms, r.avg_frame_us, r.rtf,
         );
     }
     println!();

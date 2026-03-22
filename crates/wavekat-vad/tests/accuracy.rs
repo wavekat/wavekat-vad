@@ -180,6 +180,8 @@ struct BackendResult {
     recall: f32,
     f1: f32,
     avg_frame_us: f64,
+    /// Real-Time Factor: processing_time / audio_duration (lower is better).
+    rtf: f64,
     frame_size: usize,
     frame_ms: u32,
 }
@@ -254,10 +256,16 @@ fn evaluate_backend(
     } else {
         0.0
     };
+    let total_audio_duration = total_frames as f64 * frame_duration as f64;
+    let rtf = if total_audio_duration > 0.0 {
+        total_time.as_secs_f64() / total_audio_duration
+    } else {
+        0.0
+    };
 
     eprintln!(
         "{display}: P={precision:.3} R={recall:.3} F1={f1:.3} \
-         frames={total_frames} avg={avg_frame_us:.1}µs"
+         frames={total_frames} avg={avg_frame_us:.1}µs RTF={rtf:.4}"
     );
 
     BackendResult {
@@ -267,6 +275,7 @@ fn evaluate_backend(
         recall,
         f1,
         avg_frame_us,
+        rtf,
         frame_size,
         frame_ms: caps.frame_duration_ms,
     }
@@ -318,12 +327,13 @@ fn accuracy_report() {
     let version = env!("CARGO_PKG_VERSION");
     println!();
     println!("BENCHMARK_VERSION={version}");
-    println!("| Backend | Precision | Recall | F1 Score | Frame Size | Avg Inference |");
-    println!("|---------|-----------|--------|----------|------------|---------------|");
+    println!("| Backend | Precision | Recall | F1 Score | Frame Size | Avg Inference | RTF |");
+    println!("|---------|-----------|--------|----------|------------|---------------|-----|");
     for r in &results {
         println!(
-            "| {} | {:.3} | {:.3} | {:.3} | {} ({} ms) | {:.1} µs |",
+            "| {} | {:.3} | {:.3} | {:.3} | {} ({} ms) | {:.1} µs | {:.4} |",
             r.display, r.precision, r.recall, r.f1, r.frame_size, r.frame_ms, r.avg_frame_us,
+            r.rtf,
         );
     }
     println!();

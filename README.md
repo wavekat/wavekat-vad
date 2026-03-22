@@ -40,11 +40,11 @@ Performance measured against the [TEN-VAD testset](https://github.com/TEN-framew
 <!-- benchmark-table-start -->
 *v0.1.5*
 
-| Backend | Precision | Recall | F1 Score | Frame Size | Avg Inference |
-|---------|-----------|--------|----------|------------|---------------|
-| WebRTC | 0.821 | 0.983 | 0.895 | 480 (30 ms) | 2.6 µs |
-| Silero | 0.938 | 0.938 | 0.938 | 512 (32 ms) | 115.8 µs |
-| TEN-VAD | 0.942 | 0.915 | 0.928 | 256 (16 ms) | 59.7 µs |
+| Backend | Precision | Recall | F1 Score | Frame Size | Avg Inference | RTF |
+|---------|-----------|--------|----------|------------|---------------|-----|
+| WebRTC | 0.821 | 0.983 | 0.895 | 480 (30 ms) | 2.6 µs | 0.0001 |
+| Silero | 0.938 | 0.938 | 0.938 | 512 (32 ms) | 115.8 µs | 0.0036 |
+| TEN-VAD | 0.942 | 0.915 | 0.928 | 256 (16 ms) | 59.7 µs | 0.0037 |
 <!-- benchmark-table-end -->
 
 > Accuracy metrics are deterministic; inference times are approximate and vary by hardware. Measured with `--release` on GitHub Actions `ubuntu-latest` runners. Run locally: `make accuracy` or `make bench`

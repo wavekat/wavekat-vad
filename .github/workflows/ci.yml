@@ -13,7 +13,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -21,8 +21,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test --workspace
+      - name: Run tests
+        run: cargo test --workspace 2>&1 | tee test-output.txt
       - run: cargo doc --no-deps -p wavekat-vad --all-features
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Check" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          rustc --version >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f test-output.txt ]; then
+            echo "### Test Results" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^test result:|^running' test-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   features:
     runs-on: ubuntu-latest
@@ -36,21 +50,32 @@ jobs:
           - "serde"
           - "webrtc,silero,ten-vad,serde"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}"
+      - name: Run tests
+        run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}" 2>&1 | tee test-output.txt
+      - name: Job summary
+        if: always()
+        run: |
+          FEATURES="${{ matrix.features }}"
+          echo "## Features: \`${FEATURES:-none}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f test-output.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^test result:|^running' test-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   accuracy:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - uses: Swatinem/rust-cache@v2
       - name: Cache testset
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target/testset
           key: ten-vad-testset-v1
@@ -58,4 +83,18 @@ jobs:
         run: |
           cargo test --release -p wavekat-vad --no-default-features \
             --features webrtc,silero,ten-vad \
-            -- --ignored accuracy_report --nocapture
+            -- --ignored accuracy_report --nocapture 2>&1 | tee accuracy-output.txt
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Accuracy" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f accuracy-output.txt ]; then
+            TABLE=$(grep '^|' accuracy-output.txt || true)
+            if [ -n "$TABLE" ]; then
+              echo "$TABLE" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              grep -E '^test result:|^running' accuracy-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi

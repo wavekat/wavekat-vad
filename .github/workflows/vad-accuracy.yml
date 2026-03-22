@@ -11,7 +11,7 @@ jobs:
   accuracy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -21,7 +21,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - name: Cache testset
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target/testset
           key: ten-vad-testset-v1
@@ -74,6 +74,17 @@ jobs:
               print(f"README updated with v{version} benchmarks:")
               print(table)
           PYEOF
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## VAD Accuracy Report" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f accuracy-output.txt ]; then
+            TABLE=$(grep '^|' accuracy-output.txt || true)
+            if [ -n "$TABLE" ]; then
+              echo "$TABLE" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
 
       - name: Create PR with updated benchmarks
         uses: peter-evans/create-pull-request@v6

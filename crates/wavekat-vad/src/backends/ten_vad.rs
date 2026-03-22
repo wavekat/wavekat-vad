@@ -125,6 +125,18 @@ const FEATURE_MEANS: [f32; FEATURE_LEN] = [
     -4.480289459229e+00, 9.235690307617e+01,
 ];
 
+/// Pre-computed reciprocals of `(FEATURE_STDS[i] + EPS)` for fast normalization.
+/// Replaces per-frame division with multiplication.
+const FEATURE_INV_STDS: [f32; FEATURE_LEN] = {
+    let mut inv = [0.0f32; FEATURE_LEN];
+    let mut i = 0;
+    while i < FEATURE_LEN {
+        inv[i] = 1.0 / (FEATURE_STDS[i] + EPS);
+        i += 1;
+    }
+    inv
+};
+
 /// Feature standard deviations for normalization (40 mel bands + 1 pitch).
 /// Values copied from TEN-VAD C++ implementation (coeff.h).
 #[rustfmt::skip]
@@ -178,6 +190,8 @@ struct StftAnalyzer {
     window: Vec<f32>,
     input_buffer: Vec<f32>,
     scratch: Vec<realfft::num_complex::Complex<f32>>,
+    /// Reusable FFT output buffer to avoid per-frame allocation.
+    spectrum: Vec<realfft::num_complex::Complex<f32>>,
 }
 
 impl StftAnalyzer {
@@ -194,6 +208,7 @@ impl StftAnalyzer {
             window,
             input_buffer: vec![0.0; FFT_SIZE],
             scratch: vec![realfft::num_complex::Complex::new(0.0, 0.0); scratch_len],
+            spectrum: vec![realfft::num_complex::Complex::new(0.0, 0.0); N_BINS],
         }
     }
 
@@ -208,30 +223,30 @@ impl StftAnalyzer {
     }
 
     /// Compute power spectrum from pre-emphasized audio frame.
-    /// Input: HOP_SIZE (256) samples
+    /// Input: WINDOW_SIZE (768) samples
     /// Output: N_BINS (513) power values
     fn compute_power_spectrum(&mut self, input: &[f32], output: &mut [f32]) {
-        // Zero-pad the input buffer
-        self.input_buffer.fill(0.0);
-
-        // Apply window (centered in FFT buffer)
-        // The window is 768 samples, we put it in the first 768 positions
-        let offset = 0;
-        for i in 0..WINDOW_SIZE {
-            if i < input.len() {
-                self.input_buffer[offset + i] = input[i] * self.window[i];
-            }
+        // Apply Hann window to first WINDOW_SIZE samples, zero-pad the rest
+        for (buf, (&inp, &win)) in self.input_buffer[..WINDOW_SIZE]
+            .iter_mut()
+            .zip(input.iter().zip(self.window.iter()))
+        {
+            *buf = inp * win;
         }
+        self.input_buffer[WINDOW_SIZE..].fill(0.0);
 
-        // Compute FFT
-        let mut spectrum = vec![realfft::num_complex::Complex::new(0.0, 0.0); N_BINS];
+        // Compute FFT (reuses self.spectrum buffer)
         self.fft
-            .process_with_scratch(&mut self.input_buffer, &mut spectrum, &mut self.scratch)
+            .process_with_scratch(
+                &mut self.input_buffer,
+                &mut self.spectrum,
+                &mut self.scratch,
+            )
             .expect("FFT failed");
 
         // Compute power spectrum (magnitude squared)
-        for (i, c) in spectrum.iter().enumerate() {
-            output[i] = c.re * c.re + c.im * c.im;
+        for (out, c) in output.iter_mut().zip(self.spectrum.iter()) {
+            *out = c.re * c.re + c.im * c.im;
         }
     }
 
@@ -240,10 +255,19 @@ impl StftAnalyzer {
     }
 }
 
+/// Sparse representation of a single mel triangular filter.
+/// Only stores the non-zero coefficient range, cutting iteration by ~90%.
+struct MelFilter {
+    /// First FFT bin with a non-zero coefficient.
+    start_bin: usize,
+    /// Non-zero filter coefficients (covers `start_bin..start_bin + coefficients.len()`).
+    coefficients: Vec<f32>,
+}
+
 /// Mel filterbank for converting power spectrum to mel-scale energies.
 struct MelFilterbank {
-    /// Filter coefficients: [N_MEL_BANDS][N_BINS]
-    filters: Vec<Vec<f32>>,
+    /// Sparse triangular filters, one per mel band.
+    filters: Vec<MelFilter>,
 }
 
 impl MelFilterbank {
@@ -252,7 +276,7 @@ impl MelFilterbank {
         Self { filters }
     }
 
-    fn compute_filterbank() -> Vec<Vec<f32>> {
+    fn compute_filterbank() -> Vec<MelFilter> {
         // Mel scale conversion
         fn hz_to_mel(hz: f32) -> f32 {
             2595.0 * (1.0 + hz / 700.0).log10()
@@ -274,33 +298,34 @@ impl MelFilterbank {
             bin_indices.push(bin);
         }
 
-        // Build triangular filters
-        // Note: We use range loops here because the index itself is used in calculations,
-        // not just for array access.
-        #[allow(clippy::needless_range_loop)]
-        let filters = {
-            let mut filters = vec![vec![0.0; N_BINS]; N_MEL_BANDS];
-            for j in 0..N_MEL_BANDS {
-                let left = bin_indices[j];
-                let center = bin_indices[j + 1];
-                let right = bin_indices[j + 2];
+        // Build sparse triangular filters
+        let mut filters = Vec::with_capacity(N_MEL_BANDS);
+        for j in 0..N_MEL_BANDS {
+            let left = bin_indices[j];
+            let right = bin_indices[j + 2];
+            let center = bin_indices[j + 1];
+            let span = right - left;
+            let mut coefficients = vec![0.0; span];
 
-                // Rising edge
+            // Rising edge
+            if center > left {
                 for i in left..center {
-                    if center > left {
-                        filters[j][i] = (i - left) as f32 / (center - left) as f32;
-                    }
-                }
-
-                // Falling edge
-                for i in center..right {
-                    if right > center {
-                        filters[j][i] = (right - i) as f32 / (right - center) as f32;
-                    }
+                    coefficients[i - left] = (i - left) as f32 / (center - left) as f32;
                 }
             }
-            filters
-        };
+
+            // Falling edge
+            if right > center {
+                for i in center..right {
+                    coefficients[i - left] = (right - i) as f32 / (right - center) as f32;
+                }
+            }
+
+            filters.push(MelFilter {
+                start_bin: left,
+                coefficients,
+            });
+        }
 
         filters
     }
@@ -312,8 +337,9 @@ impl MelFilterbank {
 
         for (band, filter) in self.filters.iter().enumerate() {
             let mut energy = 0.0;
-            for (bin, &coef) in filter.iter().enumerate() {
-                energy += power_spectrum[bin] * coef;
+            let spectrum_slice = &power_spectrum[filter.start_bin..];
+            for (coef, &power) in filter.coefficients.iter().zip(spectrum_slice.iter()) {
+                energy += power * coef;
             }
             // Normalize and log compress
             energy /= power_normal;
@@ -343,10 +369,12 @@ impl PitchEstimator {
 
     /// Estimate pitch frequency from audio frame.
     /// Returns pitch in Hz, or 0.0 if no pitch detected.
+    ///
+    /// Uses a coarse-to-fine two-stage autocorrelation search:
+    /// 1. Coarse pass scans periods at stride 4 (~72 iterations vs ~289)
+    /// 2. Fine pass refines ±4 around the best coarse candidate (~8 iterations)
     fn estimate(&mut self, samples: &[f32]) -> f32 {
-        // Simple autocorrelation-based pitch detection
         // Pitch range: 50 Hz - 500 Hz at 16kHz = period 32-320 samples
-
         let min_period = SAMPLE_RATE as usize / 500; // ~32 samples
         let max_period = SAMPLE_RATE as usize / 50; // ~320 samples
 
@@ -362,29 +390,51 @@ impl PitchEstimator {
             return 0.0;
         }
 
-        // Compute autocorrelation for each candidate period
-        let mut best_period = 0;
-        let mut best_corr = 0.0;
+        let upper = max_period.min(len - 32);
 
-        for period in min_period..=max_period.min(len - 32) {
+        // Helper: compute normalized autocorrelation for a given period
+        let autocorrelation = |period: usize| -> f32 {
             let mut corr = 0.0;
             let mut energy1 = 0.0;
             let mut energy2 = 0.0;
-
             for i in 0..64.min(len - period) {
                 corr += samples[i] * samples[i + period];
                 energy1 += samples[i] * samples[i];
                 energy2 += samples[i + period] * samples[i + period];
             }
-
             let norm = (energy1 * energy2).sqrt();
             if norm > 1e-10 {
-                corr /= norm;
+                corr / norm
+            } else {
+                0.0
             }
+        };
 
+        // Coarse pass: scan at stride 4
+        const COARSE_STRIDE: usize = 4;
+        let mut best_period = 0;
+        let mut best_corr = 0.0;
+
+        let mut period = min_period;
+        while period <= upper {
+            let corr = autocorrelation(period);
             if corr > best_corr {
                 best_corr = corr;
                 best_period = period;
+            }
+            period += COARSE_STRIDE;
+        }
+
+        // Fine pass: search ±COARSE_STRIDE around the best coarse candidate
+        if best_period > 0 {
+            let fine_start = best_period.saturating_sub(COARSE_STRIDE).max(min_period);
+            let fine_end = (best_period + COARSE_STRIDE).min(upper);
+            for period in fine_start..=fine_end {
+                let corr = autocorrelation(period);
+                if corr > best_corr {
+                    best_corr = corr;
+                    best_period = period;
+                }
             }
         }
 
@@ -420,6 +470,10 @@ struct TenVadPreprocessor {
     feature_stack: Vec<f32>,
     /// Number of frames processed (for warmup)
     frame_count: usize,
+    /// Reusable buffer for i16→f32 conversion (avoids per-frame allocation).
+    samples_f32: Vec<f32>,
+    /// Reusable power spectrum buffer (avoids per-frame allocation).
+    power_spectrum: Vec<f32>,
 }
 
 impl TenVadPreprocessor {
@@ -433,6 +487,8 @@ impl TenVadPreprocessor {
             emph_buffer: vec![0.0; WINDOW_SIZE],
             feature_stack: vec![0.0; CONTEXT_LEN * FEATURE_LEN],
             frame_count: 0,
+            samples_f32: vec![0.0; HOP_SIZE],
+            power_spectrum: vec![0.0; N_BINS],
         }
     }
 
@@ -440,48 +496,47 @@ impl TenVadPreprocessor {
     /// Input: HOP_SIZE (256) i16 samples
     /// Output: [CONTEXT_LEN, FEATURE_LEN] = [3, 41] features (flattened)
     fn process(&mut self, samples: &[i16]) -> &[f32] {
-        // Convert i16 to f32 (keeping [-32768, 32767] range as expected by mel filterbank)
-        let samples_f32: Vec<f32> = samples.iter().map(|&s| s as f32).collect();
-
-        // Shift time buffer and append new samples
-        let shift = HOP_SIZE;
-        self.time_buffer.copy_within(shift.., 0);
-        for (i, &s) in samples_f32.iter().enumerate() {
-            if i < HOP_SIZE {
-                self.time_buffer[WINDOW_SIZE - HOP_SIZE + i] = s;
-            }
+        // Convert i16 to f32 (reuse buffer, no allocation)
+        for (dst, &src) in self.samples_f32.iter_mut().zip(samples.iter()) {
+            *dst = src as f32;
         }
 
-        // Apply pre-emphasis
-        self.pre_emphasis
-            .process(&self.time_buffer, &mut self.emph_buffer);
+        // Shift time buffer and append new samples
+        self.time_buffer.copy_within(HOP_SIZE.., 0);
+        self.time_buffer[WINDOW_SIZE - HOP_SIZE..].copy_from_slice(&self.samples_f32);
 
-        // Compute power spectrum
-        let mut power_spectrum = vec![0.0; N_BINS];
+        // Shift emph_buffer and only pre-emphasize the new samples.
+        // Set prev_sample to the last old sample for correct filter continuity.
+        self.emph_buffer.copy_within(HOP_SIZE.., 0);
+        self.pre_emphasis.prev_sample = self.time_buffer[WINDOW_SIZE - HOP_SIZE - 1];
+        self.pre_emphasis.process(
+            &self.time_buffer[WINDOW_SIZE - HOP_SIZE..],
+            &mut self.emph_buffer[WINDOW_SIZE - HOP_SIZE..],
+        );
+
+        // Compute power spectrum (reuse buffer, no allocation)
         self.stft
-            .compute_power_spectrum(&self.emph_buffer, &mut power_spectrum);
+            .compute_power_spectrum(&self.emph_buffer, &mut self.power_spectrum);
 
         // Compute mel features
         let mut mel_features = [0.0f32; N_MEL_BANDS];
         self.mel_filterbank
-            .apply(&power_spectrum, &mut mel_features);
+            .apply(&self.power_spectrum, &mut mel_features);
 
         // Estimate pitch
-        let pitch_freq = self.pitch_estimator.estimate(&samples_f32);
+        let pitch_freq = self.pitch_estimator.estimate(&self.samples_f32);
 
         // Shift feature stack and add new features
-        let src_offset = FEATURE_LEN;
-        let src_len = (CONTEXT_LEN - 1) * FEATURE_LEN;
-        self.feature_stack.copy_within(src_offset.., 0);
+        self.feature_stack.copy_within(FEATURE_LEN.., 0);
 
-        // Add normalized features to the end of the stack
-        let dst_offset = src_len;
+        // Add normalized features to the end of the stack (multiply by reciprocal)
+        let dst_offset = (CONTEXT_LEN - 1) * FEATURE_LEN;
         for (i, &mel) in mel_features.iter().enumerate() {
-            self.feature_stack[dst_offset + i] = (mel - FEATURE_MEANS[i]) / (FEATURE_STDS[i] + EPS);
+            self.feature_stack[dst_offset + i] = (mel - FEATURE_MEANS[i]) * FEATURE_INV_STDS[i];
         }
         // Pitch feature (last feature)
         self.feature_stack[dst_offset + N_MEL_BANDS] =
-            (pitch_freq - FEATURE_MEANS[N_MEL_BANDS]) / (FEATURE_STDS[N_MEL_BANDS] + EPS);
+            (pitch_freq - FEATURE_MEANS[N_MEL_BANDS]) * FEATURE_INV_STDS[N_MEL_BANDS];
 
         self.frame_count += 1;
 
@@ -496,6 +551,8 @@ impl TenVadPreprocessor {
         self.emph_buffer.fill(0.0);
         self.feature_stack.fill(0.0);
         self.frame_count = 0;
+        self.samples_f32.fill(0.0);
+        self.power_spectrum.fill(0.0);
     }
 }
 
@@ -803,8 +860,18 @@ mod tests {
     fn mel_filterbank_initialization() {
         let fb = MelFilterbank::new();
         assert_eq!(fb.filters.len(), N_MEL_BANDS);
-        // Each filter should cover all bins
-        assert_eq!(fb.filters[0].len(), N_BINS);
+        // Each sparse filter should have non-zero coefficients
+        for filter in &fb.filters {
+            assert!(
+                !filter.coefficients.is_empty(),
+                "filter at bin {} has no coefficients",
+                filter.start_bin
+            );
+            assert!(
+                filter.start_bin + filter.coefficients.len() <= N_BINS,
+                "filter exceeds spectrum bounds"
+            );
+        }
     }
 
     #[test]

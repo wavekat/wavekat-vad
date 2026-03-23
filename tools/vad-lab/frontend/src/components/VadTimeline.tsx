@@ -136,6 +136,9 @@ export function VadTimeline({
 
     // Draw speech probability as filled bars
     // Results are sorted by timestamp, so we can calculate width based on next result
+    const thresholdVal = config?.params?.threshold;
+    const hasThreshold = typeof thresholdVal === "number" && thresholdVal > 0 && thresholdVal < 1;
+
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       // Skip results outside viewport (effectiveViewport.viewStartMs can be negative)
@@ -159,9 +162,10 @@ export function VadTimeline({
 
       const barWidth = Math.max(1, (frameDurationMs / effectiveViewport.viewDurationMs) * width);
       const barHeight = result.probability * height;
+      const aboveThreshold = hasThreshold && result.probability >= thresholdVal;
 
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.3 + result.probability * 0.7;
+      ctx.fillStyle = hasThreshold && !aboveThreshold ? "#9ca3af" : color;
+      ctx.globalAlpha = aboveThreshold ? 0.5 + result.probability * 0.5 : 0.3 + result.probability * 0.4;
       ctx.fillRect(x, height - barHeight, barWidth, barHeight);
     }
 

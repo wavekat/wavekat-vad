@@ -16,6 +16,10 @@
 //! make accuracy-update-baseline
 //! ```
 
+// Helper functions are only called from feature-gated blocks inside #[ignore] tests,
+// so they appear dead when those features are not enabled.
+#![allow(dead_code, unused_variables, unused_mut)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

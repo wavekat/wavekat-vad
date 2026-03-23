@@ -205,6 +205,23 @@ function App() {
         if (!configsLoadedRef.current) {
           configsLoadedRef.current = true;
           setConfigs(createDefaultConfigs());
+        } else {
+          // Backfill missing param defaults for saved configs (e.g. new params added)
+          setConfigs((prev) =>
+            prev.map((c) => {
+              const backendParams = msg.backends[c.backend];
+              if (!backendParams) return c;
+              let changed = false;
+              const params = { ...c.params };
+              for (const p of backendParams) {
+                if (!(p.name in params)) {
+                  params[p.name] = p.default;
+                  changed = true;
+                }
+              }
+              return changed ? { ...c, params } : c;
+            })
+          );
         }
         break;
 

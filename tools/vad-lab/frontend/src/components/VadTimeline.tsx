@@ -266,7 +266,7 @@ export function VadTimeline({
         }
       }
     }
-  }, [results, width, height, color, hoverTimeMs, playheadMs, totalDurationMs, effectiveViewport]);
+  }, [results, width, height, color, config, hoverTimeMs, playheadMs, totalDurationMs, effectiveViewport]);
 
   return (
     <div className={className}>

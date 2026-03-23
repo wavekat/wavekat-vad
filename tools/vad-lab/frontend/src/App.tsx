@@ -643,8 +643,10 @@ function App() {
                       ? "recording"
                       : configs.find((c) => c.id === playbackSource)?.label ?? playbackSource;
                   const safeName = label.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
+                  const effectiveRate = playbackSampleRate ?? sampleRate;
+                  const durationSecs = Math.round(playbackSamples.length / effectiveRate);
                   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-                  downloadWav(playbackSamples, playbackSampleRate ?? sampleRate, `vad-lab_${safeName}_${timestamp}.wav`);
+                  downloadWav(playbackSamples, effectiveRate, `vad-lab_${safeName}_${durationSecs}s_${timestamp}.wav`);
                 }}
               >
                 Download WAV

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ interface ConfigPanelProps {
   backends: Record<string, ParamInfo[]>;
   preprocessingParams: ParamInfo[];
   onConfigsChange: (configs: VadConfig[]) => void;
+  onResetDefaults: () => void;
   showPreprocessed: Record<string, boolean>;
   onShowPreprocessedChange: (configId: string, show: boolean) => void;
 }
@@ -26,10 +27,23 @@ export function ConfigPanel({
   backends,
   preprocessingParams,
   onConfigsChange,
+  onResetDefaults,
   showPreprocessed,
   onShowPreprocessedChange,
 }: ConfigPanelProps) {
   const [nextId, setNextId] = useState(1);
+
+  // Sync nextId when configs are loaded externally (localStorage / defaults)
+  useEffect(() => {
+    let max = 0;
+    for (const c of configs) {
+      const match = c.id.match(/^config-(\d+)$/);
+      if (match) {
+        max = Math.max(max, parseInt(match[1], 10));
+      }
+    }
+    setNextId((prev) => Math.max(prev, max + 1));
+  }, [configs]);
 
   const addConfig = () => {
     const backendNames = Object.keys(backends);
@@ -127,9 +141,14 @@ export function ConfigPanel({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">VAD Configurations</h3>
-        <Button size="sm" variant="outline" onClick={addConfig}>
-          + Add Config
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={addConfig}>
+            + Add Config
+          </Button>
+          <Button size="sm" variant="outline" onClick={onResetDefaults}>
+            Reset Configs
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -211,6 +230,22 @@ export function ConfigPanel({
                           ))}
                         </SelectContent>
                       </Select>
+                    )}
+                    {param.param_type.type === "Float" && (
+                      <Input
+                        type="number"
+                        min={param.param_type.options.min}
+                        max={param.param_type.options.max}
+                        step={0.05}
+                        value={Number(config.params[param.name] ?? param.default)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            updateParam(config.id, param.name, val);
+                          }
+                        }}
+                        className="h-8 text-xs w-24"
+                      />
                     )}
                   </div>
                 ))}

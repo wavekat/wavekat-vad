@@ -232,12 +232,16 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
         }],
     );
 
-    backends.insert(
-        "silero-vad".to_string(),
-        vec![], // Silero has no user-configurable params (only 8kHz/16kHz sample rates supported)
-    );
+    let threshold_param = ParamInfo {
+        name: "threshold".to_string(),
+        description: "Speech threshold".to_string(),
+        param_type: ParamType::Float { min: 0.0, max: 1.0 },
+        default: serde_json::json!(0.5),
+    };
 
-    backends.insert("ten-vad".to_string(), vec![]);
+    backends.insert("silero-vad".to_string(), vec![threshold_param.clone()]);
+
+    backends.insert("ten-vad".to_string(), vec![threshold_param]);
 
     backends
 }

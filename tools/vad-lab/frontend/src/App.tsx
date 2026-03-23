@@ -32,8 +32,85 @@ import {
 
 const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 const MAX_LOG_ENTRIES = 500;
+
+function downloadWav(samples: number[], sampleRate: number, filename: string) {
+  const numSamples = samples.length;
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+
+  // WAV header
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true); // subchunk size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, "data");
+  view.setUint32(40, numSamples * 2, true);
+
+  // Samples are already 16-bit PCM integers from the backend
+  for (let i = 0; i < numSamples; i++) {
+    view.setInt16(44 + i * 2, samples[i], true);
+  }
+
+  const blob = new Blob([buffer], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
 const MAX_UPLOAD_SIZE_MB = 100;
+const CONFIGS_STORAGE_KEY = "vad-lab-configs";
+
+function loadSavedConfigs(): VadConfig[] | null {
+  try {
+    const saved = localStorage.getItem(CONFIGS_STORAGE_KEY);
+    if (saved !== null) {
+      return JSON.parse(saved) as VadConfig[];
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+}
+
+function createDefaultConfigs(): VadConfig[] {
+  return [
+    {
+      id: "config-1",
+      label: "WebRTC VAD",
+      backend: "webrtc-vad",
+      params: { mode: "0 - quality" },
+      preprocessing: {},
+    },
+    {
+      id: "config-2",
+      label: "Silero VAD",
+      backend: "silero-vad",
+      params: { threshold: 0.5 },
+      preprocessing: {},
+    },
+    {
+      id: "config-3",
+      label: "TEN VAD",
+      backend: "ten-vad",
+      params: { threshold: 0.5 },
+      preprocessing: {},
+    },
+  ];
+}
 
 interface SpectrumFrame {
   timestamp_ms: number;
@@ -45,6 +122,7 @@ function App() {
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingRef = useRef(false);
+  const configsLoadedRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(800);
   const [uploading, setUploading] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
@@ -57,7 +135,14 @@ function App() {
   const [preprocessingParams, setPreprocessingParams] = useState<ParamInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [recording, setRecording] = useState(false);
-  const [configs, setConfigs] = useState<VadConfig[]>([]);
+  const [configs, setConfigs] = useState<VadConfig[]>(() => {
+    const saved = loadSavedConfigs();
+    if (saved) {
+      configsLoadedRef.current = true;
+      return saved;
+    }
+    return [];
+  });
   const [samples, setSamples] = useState<number[]>([]);
   const [spectrumData, setSpectrumData] = useState<SpectrumFrame[]>([]);
   const [vadResults, setVadResults] = useState<
@@ -87,6 +172,13 @@ function App() {
   const [playbackSource, setPlaybackSource] = useState<string>("original");
 
   const connected = connectionState === "connected";
+
+  // Persist configs to localStorage whenever they change
+  useEffect(() => {
+    if (configsLoadedRef.current) {
+      localStorage.setItem(CONFIGS_STORAGE_KEY, JSON.stringify(configs));
+    }
+  }, [configs]);
 
   // Resolve playback samples based on selected source
   const playbackSamples =
@@ -147,6 +239,28 @@ function App() {
       case "backends":
         setBackends(msg.backends);
         setPreprocessingParams(msg.preprocessing_params);
+        // Create default configs on first visit (no saved configs in localStorage)
+        if (!configsLoadedRef.current) {
+          configsLoadedRef.current = true;
+          setConfigs(createDefaultConfigs());
+        } else {
+          // Backfill missing param defaults for saved configs (e.g. new params added)
+          setConfigs((prev) =>
+            prev.map((c) => {
+              const backendParams = msg.backends[c.backend];
+              if (!backendParams) return c;
+              let changed = false;
+              const params = { ...c.params };
+              for (const p of backendParams) {
+                if (!(p.name in params)) {
+                  params[p.name] = p.default;
+                  changed = true;
+                }
+              }
+              return changed ? { ...c, params } : c;
+            })
+          );
+        }
         break;
 
       case "recording_started":
@@ -267,6 +381,10 @@ function App() {
     setPlaybackSource("original");
     setTotalDurationMs(0);
     setSampleRate(null);
+    // Clear any loaded file state so channel selector / re-process button don't reappear
+    setLoadedFilePath(null);
+    setFileChannels(1);
+    setSelectedChannel("mixed");
     // Calculate viewport duration based on container width for consistent scroll speed
     setViewport({
       viewStartMs: 0,
@@ -516,6 +634,24 @@ function App() {
                 </Button>
               </>
             )}
+            {sampleRate && playbackSamples.length > 0 && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const label =
+                    playbackSource === "original"
+                      ? "recording"
+                      : configs.find((c) => c.id === playbackSource)?.label ?? playbackSource;
+                  const safeName = label.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
+                  const effectiveRate = playbackSampleRate ?? sampleRate;
+                  const durationSecs = Math.round(playbackSamples.length / effectiveRate);
+                  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+                  downloadWav(playbackSamples, effectiveRate, `vad-lab_${safeName}_${durationSecs}s_${timestamp}.wav`);
+                }}
+              >
+                Download WAV
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -716,6 +852,7 @@ function App() {
         backends={backends}
         preprocessingParams={preprocessingParams}
         onConfigsChange={setConfigs}
+        onResetDefaults={() => setConfigs(createDefaultConfigs())}
         showPreprocessed={showPreprocessed}
         onShowPreprocessedChange={(configId, show) =>
           setShowPreprocessed((prev) => ({ ...prev, [configId]: show }))

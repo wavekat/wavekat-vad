@@ -850,6 +850,7 @@ function App() {
         backends={backends}
         preprocessingParams={preprocessingParams}
         onConfigsChange={setConfigs}
+        onResetDefaults={() => setConfigs(createDefaultConfigs())}
         showPreprocessed={showPreprocessed}
         onShowPreprocessedChange={(configId, show) =>
           setShowPreprocessed((prev) => ({ ...prev, [configId]: show }))

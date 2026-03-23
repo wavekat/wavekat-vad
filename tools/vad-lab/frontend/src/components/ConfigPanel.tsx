@@ -17,6 +17,7 @@ interface ConfigPanelProps {
   backends: Record<string, ParamInfo[]>;
   preprocessingParams: ParamInfo[];
   onConfigsChange: (configs: VadConfig[]) => void;
+  onResetDefaults: () => void;
   showPreprocessed: Record<string, boolean>;
   onShowPreprocessedChange: (configId: string, show: boolean) => void;
 }
@@ -26,6 +27,7 @@ export function ConfigPanel({
   backends,
   preprocessingParams,
   onConfigsChange,
+  onResetDefaults,
   showPreprocessed,
   onShowPreprocessedChange,
 }: ConfigPanelProps) {
@@ -139,9 +141,14 @@ export function ConfigPanel({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">VAD Configurations</h3>
-        <Button size="sm" variant="outline" onClick={addConfig}>
-          + Add Config
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={addConfig}>
+            + Add Config
+          </Button>
+          <Button size="sm" variant="outline" onClick={onResetDefaults}>
+            Reset Configs
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

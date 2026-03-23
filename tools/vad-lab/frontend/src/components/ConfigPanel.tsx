@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,18 @@ export function ConfigPanel({
   onShowPreprocessedChange,
 }: ConfigPanelProps) {
   const [nextId, setNextId] = useState(1);
+
+  // Sync nextId when configs are loaded externally (localStorage / defaults)
+  useEffect(() => {
+    let max = 0;
+    for (const c of configs) {
+      const match = c.id.match(/^config-(\d+)$/);
+      if (match) {
+        max = Math.max(max, parseInt(match[1], 10));
+      }
+    }
+    setNextId((prev) => Math.max(prev, max + 1));
+  }, [configs]);
 
   const addConfig = () => {
     const backendNames = Object.keys(backends);

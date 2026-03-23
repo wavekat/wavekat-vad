@@ -34,6 +34,45 @@ const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"
 const MAX_LOG_ENTRIES = 500;
 const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
 const MAX_UPLOAD_SIZE_MB = 100;
+const CONFIGS_STORAGE_KEY = "vad-lab-configs";
+
+function loadSavedConfigs(): VadConfig[] | null {
+  try {
+    const saved = localStorage.getItem(CONFIGS_STORAGE_KEY);
+    if (saved !== null) {
+      return JSON.parse(saved) as VadConfig[];
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+}
+
+function createDefaultConfigs(): VadConfig[] {
+  return [
+    {
+      id: "config-1",
+      label: "WebRTC VAD",
+      backend: "webrtc-vad",
+      params: { mode: "0 - quality" },
+      preprocessing: {},
+    },
+    {
+      id: "config-2",
+      label: "Silero VAD",
+      backend: "silero-vad",
+      params: {},
+      preprocessing: {},
+    },
+    {
+      id: "config-3",
+      label: "TEN VAD",
+      backend: "ten-vad",
+      params: {},
+      preprocessing: {},
+    },
+  ];
+}
 
 interface SpectrumFrame {
   timestamp_ms: number;
@@ -45,6 +84,7 @@ function App() {
   const waveformContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingRef = useRef(false);
+  const configsLoadedRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(800);
   const [uploading, setUploading] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
@@ -57,7 +97,14 @@ function App() {
   const [preprocessingParams, setPreprocessingParams] = useState<ParamInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [recording, setRecording] = useState(false);
-  const [configs, setConfigs] = useState<VadConfig[]>([]);
+  const [configs, setConfigs] = useState<VadConfig[]>(() => {
+    const saved = loadSavedConfigs();
+    if (saved) {
+      configsLoadedRef.current = true;
+      return saved;
+    }
+    return [];
+  });
   const [samples, setSamples] = useState<number[]>([]);
   const [spectrumData, setSpectrumData] = useState<SpectrumFrame[]>([]);
   const [vadResults, setVadResults] = useState<
@@ -87,6 +134,13 @@ function App() {
   const [playbackSource, setPlaybackSource] = useState<string>("original");
 
   const connected = connectionState === "connected";
+
+  // Persist configs to localStorage whenever they change
+  useEffect(() => {
+    if (configsLoadedRef.current) {
+      localStorage.setItem(CONFIGS_STORAGE_KEY, JSON.stringify(configs));
+    }
+  }, [configs]);
 
   // Resolve playback samples based on selected source
   const playbackSamples =
@@ -147,6 +201,11 @@ function App() {
       case "backends":
         setBackends(msg.backends);
         setPreprocessingParams(msg.preprocessing_params);
+        // Create default configs on first visit (no saved configs in localStorage)
+        if (!configsLoadedRef.current) {
+          configsLoadedRef.current = true;
+          setConfigs(createDefaultConfigs());
+        }
         break;
 
       case "recording_started":

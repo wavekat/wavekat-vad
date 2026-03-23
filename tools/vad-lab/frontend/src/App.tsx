@@ -32,6 +32,45 @@ import {
 
 const COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 const MAX_LOG_ENTRIES = 500;
+
+function downloadWav(samples: number[], sampleRate: number, filename: string) {
+  const numSamples = samples.length;
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+
+  // WAV header
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true); // subchunk size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, "data");
+  view.setUint32(40, numSamples * 2, true);
+
+  // Convert float samples to 16-bit PCM
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+
+  const blob = new Blob([buffer], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 const MAX_RECORDING_DURATION_SECS = 120; // 2 minutes
 const MAX_UPLOAD_SIZE_MB = 100;
 const CONFIGS_STORAGE_KEY = "vad-lab-configs";
@@ -343,6 +382,10 @@ function App() {
     setPlaybackSource("original");
     setTotalDurationMs(0);
     setSampleRate(null);
+    // Clear any loaded file state so channel selector / re-process button don't reappear
+    setLoadedFilePath(null);
+    setFileChannels(1);
+    setSelectedChannel("mixed");
     // Calculate viewport duration based on container width for consistent scroll speed
     setViewport({
       viewStartMs: 0,
@@ -591,6 +634,21 @@ function App() {
                   Stop
                 </Button>
               </>
+            )}
+            {sampleRate && playbackSamples.length > 0 && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const label =
+                    playbackSource === "original"
+                      ? "recording"
+                      : configs.find((c) => c.id === playbackSource)?.label ?? playbackSource;
+                  const safeName = label.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
+                  downloadWav(playbackSamples, playbackSampleRate ?? sampleRate, `${safeName}.wav`);
+                }}
+              >
+                Download WAV
+              </Button>
             )}
           </div>
         )}

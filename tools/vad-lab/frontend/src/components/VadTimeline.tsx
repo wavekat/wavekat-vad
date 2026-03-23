@@ -167,6 +167,22 @@ export function VadTimeline({
 
     ctx.globalAlpha = 1;
 
+    // Draw threshold line if present
+    const threshold = config?.params?.threshold;
+    if (typeof threshold === "number" && threshold > 0 && threshold < 1) {
+      const y = height - threshold * height;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
     // Draw crosshair
     if (hoverTimeMs != null) {
       const x = timeToPixel(hoverTimeMs, width, effectiveViewport);

@@ -61,14 +61,14 @@ function createDefaultConfigs(): VadConfig[] {
       id: "config-2",
       label: "Silero VAD",
       backend: "silero-vad",
-      params: {},
+      params: { threshold: 0.5 },
       preprocessing: {},
     },
     {
       id: "config-3",
       label: "TEN VAD",
       backend: "ten-vad",
-      params: {},
+      params: { threshold: 0.5 },
       preprocessing: {},
     },
   ];

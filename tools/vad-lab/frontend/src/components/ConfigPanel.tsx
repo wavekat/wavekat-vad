@@ -224,6 +224,22 @@ export function ConfigPanel({
                         </SelectContent>
                       </Select>
                     )}
+                    {param.param_type.type === "Float" && (
+                      <Input
+                        type="number"
+                        min={param.param_type.options.min}
+                        max={param.param_type.options.max}
+                        step={0.05}
+                        value={Number(config.params[param.name] ?? param.default)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            updateParam(config.id, param.name, val);
+                          }
+                        }}
+                        className="h-8 text-xs w-24"
+                      />
+                    )}
                   </div>
                 ))}
 

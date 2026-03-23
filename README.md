@@ -38,13 +38,13 @@ wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad"] }  #
 Performance measured against the [TEN-VAD testset](https://github.com/TEN-framework/ten-vad/tree/main/testset) — 30 audio files from LibriSpeech, GigaSpeech, and DNS Challenge with manual speech/non-speech annotations. Threshold: 0.5.
 
 <!-- benchmark-table-start -->
-*v0.1.6*
+*v0.1.7*
 
 | Backend | Precision | Recall | F1 Score | Frame Size | Avg Inference | RTF |
 |---------|-----------|--------|----------|------------|---------------|-----|
 | WebRTC | 0.821 | 0.983 | 0.895 | 480 (30 ms) | 2.6 µs | 0.0001 |
-| Silero | 0.938 | 0.938 | 0.938 | 512 (32 ms) | 117.7 µs | 0.0037 |
-| TEN-VAD | 0.942 | 0.915 | 0.928 | 256 (16 ms) | 59.7 µs | 0.0037 |
+| Silero | 0.938 | 0.938 | 0.938 | 512 (32 ms) | 120.4 µs | 0.0038 |
+| TEN-VAD | 0.942 | 0.915 | 0.928 | 256 (16 ms) | 60.7 µs | 0.0038 |
 <!-- benchmark-table-end -->
 
 > Accuracy metrics are deterministic; inference times are approximate and vary by hardware. Measured with `--release` on GitHub Actions `ubuntu-latest` runners. Run locally: `make accuracy` or `make bench`

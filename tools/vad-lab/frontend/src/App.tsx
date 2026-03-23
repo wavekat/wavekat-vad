@@ -57,10 +57,9 @@ function downloadWav(samples: number[], sampleRate: number, filename: string) {
   writeString(36, "data");
   view.setUint32(40, numSamples * 2, true);
 
-  // Convert float samples to 16-bit PCM
+  // Samples are already 16-bit PCM integers from the backend
   for (let i = 0; i < numSamples; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    view.setInt16(44 + i * 2, samples[i], true);
   }
 
   const blob = new Blob([buffer], { type: "audio/wav" });
@@ -644,7 +643,8 @@ function App() {
                       ? "recording"
                       : configs.find((c) => c.id === playbackSource)?.label ?? playbackSource;
                   const safeName = label.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
-                  downloadWav(playbackSamples, playbackSampleRate ?? sampleRate, `${safeName}.wav`);
+                  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+                  downloadWav(playbackSamples, playbackSampleRate ?? sampleRate, `vad-lab_${safeName}_${timestamp}.wav`);
                 }}
               >
                 Download WAV

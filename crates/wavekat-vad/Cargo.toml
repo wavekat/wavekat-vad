@@ -17,6 +17,7 @@ webrtc = ["dep:webrtc-vad"]
 silero = ["dep:ort", "dep:ndarray", "dep:ureq"]
 denoise = ["dep:nnnoiseless"]
 ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
+firered = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
 serde = ["dep:serde"]
 
 [dependencies]

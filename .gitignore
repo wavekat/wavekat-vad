@@ -30,6 +30,9 @@ tools/vad-lab/frontend/dist/
 *.wav
 !testdata/**/*.wav
 
+# Python virtual environments
+.venv/
+
 # Environment
 .env
 

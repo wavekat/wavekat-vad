@@ -11,6 +11,7 @@
 //! | [WebRTC](`backends::webrtc`) | `webrtc` (default) | 8/16/32/48 kHz | 10, 20, or 30ms | Binary (0.0 or 1.0) |
 //! | [Silero](`backends::silero`) | `silero` | 8/16 kHz | 32ms | Continuous (0.0–1.0) |
 //! | [TEN-VAD](`backends::ten_vad`) | `ten-vad` | 16 kHz only | 16ms | Continuous (0.0–1.0) |
+//! | [FireRedVAD](`backends::firered`) | `firered` | 16 kHz only | 10ms | Continuous (0.0–1.0) |
 //!
 //! # Quick start
 //!
@@ -21,6 +22,7 @@
 //! wavekat-vad = "0.1"                                  # WebRTC only (default)
 //! wavekat-vad = { version = "0.1", features = ["silero"] }  # Silero
 //! wavekat-vad = { version = "0.1", features = ["ten-vad"] } # TEN-VAD
+//! wavekat-vad = { version = "0.1", features = ["firered"] } # FireRedVAD
 //! ```
 //!
 //! Then create a detector and process audio frames:
@@ -101,18 +103,20 @@
 //! | `webrtc` | Yes | WebRTC VAD backend |
 //! | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
 //! | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
+//! | `firered` | No | FireRedVAD backend (ONNX model + CMVN downloaded at build time) |
 //! | `denoise` | No | RNNoise-based noise suppression in [`preprocessing`] |
 //! | `serde` | No | `Serialize`/`Deserialize` for config types |
 //!
 //! ## ONNX model downloads
 //!
-//! The Silero and TEN-VAD backends download their ONNX models automatically
-//! at build time. For offline or CI builds, set environment variables to
-//! point to local model files:
+//! The Silero, TEN-VAD, and FireRedVAD backends download their ONNX models
+//! automatically at build time. For offline or CI builds, set environment
+//! variables to point to local model files:
 //!
 //! ```sh
 //! SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
 //! TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
+//! FIRERED_MODEL_PATH=/path/to/model.onnx FIRERED_CMVN_PATH=/path/to/cmvn.ark cargo build --features firered
 //! ```
 //!
 //! # Error handling

@@ -181,60 +181,24 @@ impl FbankExtractor {
         filters
     }
 
-    /// Extract one FBank frame from raw i16 samples.
+    /// Extract one FBank frame from new f32 samples.
     ///
-    /// Input: `FRAME_SHIFT` (160) i16 samples at 16 kHz.
+    /// Input: `FRAME_SHIFT` (160) f32 samples at 16 kHz.
     /// Output: 80-dim log Mel filterbank feature vector.
     ///
     /// Internally buffers the overlap from previous frames to form
-    /// the full 400-sample analysis window.
-    pub fn extract_frame(&mut self, samples: &[i16], output: &mut [f32; N_MEL]) {
+    /// the full 400-sample analysis window. Must call
+    /// [`extract_frame_full`](Self::extract_frame_full) for the first frame.
+    pub fn extract_frame(&mut self, samples: &[f32], output: &mut [f32; N_MEL]) {
         debug_assert_eq!(samples.len(), FRAME_SHIFT);
+        debug_assert!(!self.first_frame, "must call extract_frame_full for the first frame");
         let overlap_len = FRAME_LENGTH - FRAME_SHIFT; // 240
 
-        // Build the full 400-sample frame:
-        // [overlap_buffer (240 samples) | new_samples (160 samples)]
-        // For the first frame, overlap_buffer is all zeros (matching snip_edges=true behavior).
         let mut frame = [0.0f32; FRAME_LENGTH];
-        if self.first_frame {
-            // First frame: the "overlap" is zeros for the first 240 samples,
-            // but with snip_edges=true, Kaldi starts the window at sample 0.
-            // So frame 0 uses samples[0..400], frame 1 uses samples[160..560], etc.
-            // We only have 160 samples. With snip_edges=true, we can't form
-            // a full frame until we have 400 samples. So we need to buffer.
-            //
-            // Actually, snip_edges=true means we DON'T pad — we start at sample 0
-            // and need the full 400 samples. For streaming, the caller is expected
-            // to buffer externally. But in our VoiceActivityDetector::process(),
-            // we accumulate samples until we have a full frame.
-            //
-            // For the streaming model, we need to accumulate FRAME_LENGTH samples
-            // before we can produce the first FBank frame. The overlap buffer
-            // mechanism handles subsequent frames.
-            //
-            // However, to match the Python behavior where a full file of samples
-            // is passed at once, we'll buffer samples and produce frames when
-            // we have enough. This is handled by the caller (FireRedVad struct).
-            //
-            // For now, assume the caller passes the right samples:
-            // Frame 0: samples[0..400]  (handled via accumulate_and_extract)
-            // Frame 1: samples[160..560] (overlap[0..240] = prev[160..400], new = samples[0..160])
-            //
-            // Since this function receives FRAME_SHIFT (160) samples at a time,
-            // the first call won't produce output. The caller must buffer.
-            unreachable!("extract_frame should not be called before enough samples are buffered");
-        }
-
-        // Normal case: compose frame from overlap + new samples
         frame[..overlap_len].copy_from_slice(&self.overlap_buffer);
-        for (i, &s) in samples.iter().enumerate() {
-            frame[overlap_len + i] = s as f32;
-        }
+        frame[overlap_len..].copy_from_slice(samples);
 
-        // Update overlap buffer for next frame (last 240 samples of current frame)
         self.overlap_buffer.copy_from_slice(&frame[FRAME_SHIFT..]);
-
-        // Process the frame
         self.process_frame(&frame, output);
         self.frame_count += 1;
     }

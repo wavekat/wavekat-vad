@@ -87,6 +87,9 @@ python scripts/firered/validate_upstream.py
 
 # With a real WAV file (more convincing)
 python scripts/firered/validate_upstream.py --wav target/testset/testset-audio-01.wav
+
+# Save upstream probs for Rust tests (uses synthetic signal)
+python scripts/firered/validate_upstream.py --save-upstream
 ```
 
 Small numerical differences (< 1%) are expected due to PyTorch vs ONNX inference.

@@ -192,6 +192,11 @@ def main():
         default="/tmp/FireRedVAD/Stream-VAD",
         help="Path to Stream-VAD model directory (contains model.pth.tar + cmvn.ark).",
     )
+    parser.add_argument(
+        "--save-upstream",
+        action="store_true",
+        help="Save upstream probabilities to testdata/firered_reference/ref_upstream_probs.json",
+    )
     args = parser.parse_args()
 
     print("=== Validating our pipeline against FireRedVAD upstream ===\n")
@@ -252,6 +257,16 @@ def main():
 
     if passed:
         print("  Our pipeline matches FireRedVAD upstream end-to-end.")
+
+    # Save upstream probs for Rust tests (only with default synthetic signal)
+    if args.save_upstream and not args.wav:
+        ref_dir = os.path.join(PROJECT_DIR, "testdata", "firered_reference")
+        out_path = os.path.join(ref_dir, "ref_upstream_probs.json")
+        with open(out_path, "w") as f:
+            json.dump({"probs": upstream_probs}, f)
+        print(f"\n  Upstream probs saved to {out_path}")
+    elif args.save_upstream and args.wav:
+        print("\n  WARNING: --save-upstream only works with the default synthetic signal")
 
     if cleanup_wav:
         os.remove(wav_path)

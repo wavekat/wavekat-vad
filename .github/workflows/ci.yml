@@ -47,8 +47,9 @@ jobs:
           - "webrtc"
           - "silero"
           - "ten-vad"
+          - "firered"
           - "serde"
-          - "webrtc,silero,ten-vad,serde"
+          - "webrtc,silero,ten-vad,firered,serde"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -72,7 +73,7 @@ jobs:
       - name: Run accuracy regression check
         run: |
           cargo test --release -p wavekat-vad --no-default-features \
-            --features webrtc,silero,ten-vad \
+            --features webrtc,silero,ten-vad,firered \
             -- --ignored accuracy_report --nocapture 2>&1 | tee accuracy-output.txt
       - name: Job summary
         if: always()

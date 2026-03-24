@@ -29,7 +29,7 @@ jobs:
       - name: Run accuracy report
         run: |
           cargo test --release -p wavekat-vad --no-default-features \
-            --features webrtc,silero,ten-vad \
+            --features webrtc,silero,ten-vad,firered \
             -- --ignored accuracy_report --nocapture 2>&1 | tee accuracy-output.txt
 
       - name: Update README benchmark table

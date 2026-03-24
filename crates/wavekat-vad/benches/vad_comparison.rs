@@ -45,6 +45,23 @@ fn vad_benchmarks(c: &mut Criterion) {
         });
     }
 
+    #[cfg(feature = "firered")]
+    {
+        use wavekat_vad::backends::firered::FireRedVad;
+        use wavekat_vad::VoiceActivityDetector;
+
+        let mut vad = FireRedVad::new().unwrap();
+        // FireRedVad needs 3 frames to produce the first result (buffering 400 samples)
+        let warmup = vec![0i16; 160];
+        let _ = vad.process(&warmup, 16000).unwrap();
+        let _ = vad.process(&warmup, 16000).unwrap();
+        let samples = vec![0i16; vad.capabilities().frame_size];
+
+        group.bench_function("fireredvad", |b| {
+            b.iter(|| vad.process(criterion::black_box(&samples), 16000).unwrap())
+        });
+    }
+
     group.finish();
 }
 

@@ -7,7 +7,7 @@
 //!
 //! Run with:
 //! ```sh
-//! cargo test --release -p wavekat-vad --features webrtc,silero,ten-vad \
+//! cargo test --release -p wavekat-vad --features webrtc,silero,ten-vad,firered \
 //!     -- --ignored accuracy_report --nocapture
 //! ```
 //!
@@ -327,9 +327,21 @@ fn accuracy_report() {
         ));
     }
 
+    #[cfg(feature = "firered")]
+    {
+        use wavekat_vad::backends::firered::FireRedVad;
+        let mut vad = FireRedVad::new().unwrap();
+        results.push(evaluate_backend(
+            "firered",
+            "FireRedVAD",
+            &mut vad,
+            &testset_dir,
+        ));
+    }
+
     assert!(
         !results.is_empty(),
-        "No backends enabled — use --features webrtc,silero,ten-vad"
+        "No backends enabled — use --features webrtc,silero,ten-vad,firered"
     );
 
     // Print markdown table (CI parses this to update README)
@@ -416,6 +428,14 @@ fn accuracy_update_baseline() {
         use wavekat_vad::backends::ten_vad::TenVad;
         let mut vad = TenVad::new().unwrap();
         let r = evaluate_backend("ten-vad", "TEN-VAD", &mut vad, &testset_dir);
+        update_baseline(&mut baselines, &r);
+    }
+
+    #[cfg(feature = "firered")]
+    {
+        use wavekat_vad::backends::firered::FireRedVad;
+        let mut vad = FireRedVad::new().unwrap();
+        let r = evaluate_backend("firered", "FireRedVAD", &mut vad, &testset_dir);
         update_baseline(&mut baselines, &r);
     }
 

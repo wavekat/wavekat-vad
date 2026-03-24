@@ -71,19 +71,20 @@ ci:
 	cargo test -p wavekat-vad --no-default-features --features "webrtc"
 	cargo test -p wavekat-vad --no-default-features --features "silero"
 	cargo test -p wavekat-vad --no-default-features --features "ten-vad"
+	cargo test -p wavekat-vad --no-default-features --features "firered"
 	cargo test -p wavekat-vad --no-default-features --features "serde"
-	cargo test -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,serde"
+	cargo test -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered,serde"
 
 # Run criterion benchmarks for per-frame inference timing
 bench:
-	cargo bench -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad"
+	cargo bench -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered"
 
 # Run accuracy test against the TEN-VAD testset (30 labeled audio files)
 accuracy:
-	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad" \
+	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered" \
 		-- --ignored accuracy_report --nocapture
 
 # Update accuracy-baseline.json with current best scores (only raises, never lowers)
 accuracy-update-baseline:
-	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad" \
+	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered" \
 		-- --ignored accuracy_update_baseline --nocapture

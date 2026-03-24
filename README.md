@@ -1,4 +1,6 @@
-# WaveKat VAD
+<p align="center">
+  <img src="https://github.com/wavekat/wavekat-brand/raw/main/assets/banners/wavekat-vad-narrow.svg" alt="WaveKat VAD">
+</p>
 
 [![Crates.io](https://img.shields.io/crates/v/wavekat-vad.svg)](https://crates.io/crates/wavekat-vad)
 [![docs.rs](https://docs.rs/wavekat-vad/badge.svg)](https://docs.rs/wavekat-vad)

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11](https://github.com/wavekat/wavekat-vad/compare/v0.1.10...v0.1.11) - 2026-03-25
+
+### Added
+
+- upgrade silero backend to v6.2.1 ([#42](https://github.com/wavekat/wavekat-vad/pull/42))
+
 ## [0.1.10](https://github.com/wavekat/wavekat-vad/compare/v0.1.9...v0.1.10) - 2026-03-25
 
 ### Other

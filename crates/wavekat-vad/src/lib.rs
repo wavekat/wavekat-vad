@@ -162,6 +162,39 @@ pub use adapter::FrameAdapter;
 
 pub use error::VadError;
 
+use std::time::Duration;
+
+/// Accumulated processing time breakdown by named pipeline stage.
+///
+/// Each backend defines its own stages (e.g. `"fbank"`, `"cmvn"`, `"onnx"`),
+/// so you can see exactly where time is spent without hardcoding a fixed set
+/// of fields. Stages are returned in pipeline order.
+///
+/// Call [`VoiceActivityDetector::timings()`] to retrieve the current values.
+/// Timings accumulate across all calls to [`process()`](VoiceActivityDetector::process)
+/// and are **not** reset by [`reset()`](VoiceActivityDetector::reset).
+///
+/// # Example
+///
+/// ```ignore
+/// let t = vad.timings();
+/// for (name, dur) in &t.stages {
+///     let avg_us = dur.as_secs_f64() * 1_000_000.0 / t.frames as f64;
+///     println!("{name}: {avg_us:.1} µs/frame");
+/// }
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct ProcessTimings {
+    /// Named timing stages in pipeline order.
+    ///
+    /// Each entry is `(stage_name, accumulated_duration)`. The stage names
+    /// are backend-specific — for example FireRedVAD reports `"fbank"`,
+    /// `"cmvn"`, and `"onnx"`, while Silero reports `"normalize"` and `"onnx"`.
+    pub stages: Vec<(&'static str, Duration)>,
+    /// Number of frames that produced a result (excludes buffering-only frames).
+    pub frames: u64,
+}
+
 /// Describes the audio requirements of a VAD backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VadCapabilities {
@@ -205,5 +238,15 @@ pub trait VoiceActivityDetector: Send {
     /// Reset the detector's internal state.
     ///
     /// Call this when starting a new audio stream or after a long pause.
+    /// Does **not** reset accumulated [`timings()`](Self::timings).
     fn reset(&mut self);
+
+    /// Return accumulated processing time breakdown.
+    ///
+    /// Timings accumulate across all calls to [`process()`](Self::process)
+    /// and persist through [`reset()`](Self::reset). Returns default
+    /// (zero) timings if the backend does not track them.
+    fn timings(&self) -> ProcessTimings {
+        ProcessTimings::default()
+    }
 }

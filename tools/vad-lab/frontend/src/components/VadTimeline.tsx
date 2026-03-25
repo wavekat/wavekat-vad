@@ -18,6 +18,8 @@ interface VadTimelineProps {
   results: Array<{ timestamp_ms: number; probability: number }>;
   /** Real-Time Factor (processing_time / audio_duration). Lower is better. */
   rtf?: number | null;
+  /** Per-stage average timing breakdown in µs/frame. */
+  stageAvgs?: Array<{ name: string; us: number }>;
   totalDurationMs: number;
   viewport: Viewport;
   width?: number;
@@ -63,6 +65,7 @@ export function VadTimeline({
   config,
   results,
   rtf,
+  stageAvgs,
   totalDurationMs,
   viewport,
   width = 800,
@@ -280,6 +283,11 @@ export function VadTimeline({
         {rtf != null && (
           <span className="text-xs text-muted-foreground font-mono ml-auto">
             RTF {rtf.toFixed(4)}
+            {stageAvgs && stageAvgs.length > 0 && (
+              <> ({stageAvgs.map((s) =>
+                `${s.name}: ${s.us < 10 ? s.us.toFixed(1) : Math.round(s.us)}µs`
+              ).join(" → ")})</>
+            )}
           </span>
         )}
       </div>

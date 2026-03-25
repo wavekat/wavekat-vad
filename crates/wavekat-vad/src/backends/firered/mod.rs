@@ -57,11 +57,12 @@ pub(crate) mod fbank;
 
 use super::onnx;
 use crate::error::VadError;
-use crate::{VadCapabilities, VoiceActivityDetector};
+use crate::{ProcessTimings, VadCapabilities, VoiceActivityDetector};
 use cmvn::CmvnStats;
 use fbank::FbankExtractor;
 use ndarray::Array4;
 use ort::{inputs, session::Session, value::TensorRef};
+use std::time::{Duration, Instant};
 
 /// Embedded FireRedVAD ONNX model (streaming with cache).
 const MODEL_BYTES: &[u8] = include_bytes!(concat!(
@@ -117,6 +118,14 @@ pub struct FireRedVad {
     sample_buffer: Vec<f32>,
     /// Total frames produced so far.
     frame_count: usize,
+    /// Accumulated time for FBank feature extraction (buffer + FFT + mel).
+    fbank_time: Duration,
+    /// Accumulated time for CMVN normalization.
+    cmvn_time: Duration,
+    /// Accumulated time for tensor creation + ONNX run + cache update.
+    onnx_time: Duration,
+    /// Number of frames that produced a result.
+    timing_frames: u64,
 }
 
 // SAFETY: ort::Session is Send in ort 2.x, and all other fields are owned Send types.
@@ -191,6 +200,10 @@ impl FireRedVad {
             caches: Array4::<f32>::zeros((CACHE_LAYERS, CACHE_BATCH, CACHE_PROJ, CACHE_LOOKBACK)),
             sample_buffer: Vec::with_capacity(FRAME_LENGTH),
             frame_count: 0,
+            fbank_time: Duration::ZERO,
+            cmvn_time: Duration::ZERO,
+            onnx_time: Duration::ZERO,
+            timing_frames: 0,
         })
     }
 
@@ -290,7 +303,8 @@ impl VoiceActivityDetector for FireRedVad {
             return Ok(0.0);
         }
 
-        // Extract FBank features
+        // --- FBank feature extraction ---
+        let t_fbank = Instant::now();
         let mut fbank_features = [0.0f32; N_MEL];
 
         if self.frame_count == 0 {
@@ -311,12 +325,20 @@ impl VoiceActivityDetector for FireRedVad {
         }
 
         self.frame_count += 1;
+        self.fbank_time += t_fbank.elapsed();
 
-        // Apply CMVN normalization
+        // --- CMVN normalization ---
+        let t_cmvn = Instant::now();
         self.cmvn.normalize(&mut fbank_features);
+        self.cmvn_time += t_cmvn.elapsed();
 
-        // Run inference
-        self.run_inference(&fbank_features)
+        // --- ONNX inference ---
+        let t_onnx = Instant::now();
+        let result = self.run_inference(&fbank_features);
+        self.onnx_time += t_onnx.elapsed();
+        self.timing_frames += 1;
+
+        result
     }
 
     fn reset(&mut self) {
@@ -324,6 +346,17 @@ impl VoiceActivityDetector for FireRedVad {
         self.caches.fill(0.0);
         self.sample_buffer.clear();
         self.frame_count = 0;
+    }
+
+    fn timings(&self) -> ProcessTimings {
+        ProcessTimings {
+            stages: vec![
+                ("fbank", self.fbank_time),
+                ("cmvn", self.cmvn_time),
+                ("onnx", self.onnx_time),
+            ],
+            frames: self.timing_frames,
+        }
     }
 }
 

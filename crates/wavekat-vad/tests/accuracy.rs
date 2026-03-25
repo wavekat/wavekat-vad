@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::{ProcessTimings, VoiceActivityDetector};
 
 const TESTSET_URL: &str = "https://github.com/TEN-framework/ten-vad/raw/main/testset";
 const NUM_FILES: usize = 30;
@@ -193,6 +193,8 @@ struct BackendResult {
     rtf: f64,
     frame_size: usize,
     frame_ms: u32,
+    /// Per-stage timing breakdown from the backend.
+    timings: ProcessTimings,
 }
 
 fn evaluate_backend(
@@ -272,10 +274,25 @@ fn evaluate_backend(
         0.0
     };
 
-    eprintln!(
+    let timings = vad.timings();
+
+    // Print summary + per-stage breakdown
+    eprint!(
         "{display}: P={precision:.3} R={recall:.3} F1={f1:.3} \
          frames={total_frames} avg={avg_frame_us:.1}µs RTF={rtf:.4}"
     );
+    if timings.frames > 0 {
+        eprint!("  [");
+        for (i, (name, dur)) in timings.stages.iter().enumerate() {
+            if i > 0 {
+                eprint!(", ");
+            }
+            let avg_us = dur.as_secs_f64() * 1_000_000.0 / timings.frames as f64;
+            eprint!("{name}={avg_us:.1}µs");
+        }
+        eprint!("]");
+    }
+    eprintln!();
 
     BackendResult {
         id: id.to_string(),
@@ -287,6 +304,7 @@ fn evaluate_backend(
         rtf,
         frame_size,
         frame_ms: caps.frame_duration_ms,
+        timings,
     }
 }
 
@@ -355,6 +373,35 @@ fn accuracy_report() {
             "| {} | {:.3} | {:.3} | {:.3} | {} ({} ms) | {:.1} µs | {:.4} |",
             r.display, r.precision, r.recall, r.f1, r.frame_size, r.frame_ms, r.avg_frame_us, r.rtf,
         );
+    }
+    println!();
+
+    // Print per-stage timing breakdown
+    println!("### Per-Stage Timing (µs/frame)");
+    println!();
+    for r in &results {
+        if r.timings.frames > 0 {
+            let stage_strs: Vec<String> = r
+                .timings
+                .stages
+                .iter()
+                .map(|(name, dur)| {
+                    let avg = dur.as_secs_f64() * 1_000_000.0 / r.timings.frames as f64;
+                    format!("{name}: {avg:.1}")
+                })
+                .collect();
+            let total: f64 = r
+                .timings
+                .stages
+                .iter()
+                .map(|(_, d)| d.as_secs_f64() * 1_000_000.0 / r.timings.frames as f64)
+                .sum();
+            println!(
+                "- **{}**: {} (total: {total:.1} µs/frame)",
+                r.display,
+                stage_strs.join(" → ")
+            );
+        }
     }
     println!();
 

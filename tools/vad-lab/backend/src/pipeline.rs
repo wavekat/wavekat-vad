@@ -5,7 +5,16 @@ use std::collections::HashMap;
 use std::time::Instant;
 use tokio::sync::{broadcast, mpsc};
 use wavekat_vad::preprocessing::Preprocessor;
-use wavekat_vad::{FrameAdapter, VoiceActivityDetector};
+use wavekat_vad::{FrameAdapter, ProcessTimings, VoiceActivityDetector};
+
+/// Per-stage timing entry (name + microseconds).
+#[derive(Debug, Clone, Serialize)]
+pub struct StageTiming {
+    /// Stage name (e.g. "fbank", "onnx").
+    pub name: String,
+    /// Time in microseconds for this frame.
+    pub us: f64,
+}
 
 /// A VAD result from the pipeline.
 #[derive(Debug, Clone, Serialize)]
@@ -18,11 +27,38 @@ pub struct PipelineResult {
     pub probability: f32,
     /// Inference time in microseconds for this frame.
     pub inference_us: f64,
+    /// Per-stage timing breakdown in pipeline order.
+    pub stage_times: Vec<StageTiming>,
     /// Frame duration in milliseconds (from backend capabilities).
     pub frame_duration_ms: u32,
     /// Preprocessed audio samples (for visualization).
     #[serde(skip_serializing)]
     pub preprocessed_samples: Vec<i16>,
+}
+
+/// Compute per-frame stage timing deltas between two snapshots.
+fn stage_deltas(before: &ProcessTimings, after: &ProcessTimings, num_frames: usize) -> Vec<StageTiming> {
+    if num_frames == 0 {
+        return Vec::new();
+    }
+    after
+        .stages
+        .iter()
+        .map(|(name, dur_after)| {
+            let dur_before = before
+                .stages
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, d)| *d)
+                .unwrap_or(std::time::Duration::ZERO);
+            let delta_us =
+                (dur_after.as_secs_f64() - dur_before.as_secs_f64()) * 1_000_000.0;
+            StageTiming {
+                name: name.to_string(),
+                us: delta_us / num_frames as f64,
+            }
+        })
+        .collect()
 }
 
 /// Run the VAD pipeline: fan out audio frames to multiple VAD configs.
@@ -90,6 +126,7 @@ pub fn run_pipeline(
                 let preprocessed_samples = preprocessor.process(&samples);
 
                 // Run VAD on preprocessed audio (adapter handles frame buffering)
+                let timings_before = adapter.timings();
                 let start = Instant::now();
                 match adapter.process_all(&preprocessed_samples, effective_rate) {
                     Ok(probabilities) => {
@@ -100,12 +137,15 @@ pub fn run_pipeline(
                         } else {
                             elapsed_us / probabilities.len() as f64
                         };
+                        let per_frame_stages =
+                            stage_deltas(&timings_before, &adapter.timings(), probabilities.len());
                         for probability in probabilities {
                             let result = PipelineResult {
                                 config_id: config_id.clone(),
                                 timestamp_ms: frame.timestamp_ms,
                                 probability,
                                 inference_us: per_frame_us,
+                                stage_times: per_frame_stages.clone(),
                                 frame_duration_ms,
                                 preprocessed_samples: preprocessed_samples.clone(),
                             };
@@ -136,8 +176,8 @@ pub fn run_pipeline(
 /// Returns `None` when the backend accepts the given `input_rate` as-is.
 fn backend_required_rate(backend: &str, input_rate: u32) -> Option<u32> {
     match backend {
-        // TEN-VAD only supports 16 kHz
-        "ten-vad" if input_rate != 16000 => Some(16000),
+        // TEN-VAD and FireRedVAD only support 16 kHz
+        "ten-vad" | "firered-vad" if input_rate != 16000 => Some(16000),
         _ => None,
     }
 }
@@ -209,6 +249,13 @@ fn create_detector(
             let vad = TenVad::new().map_err(|e| format!("failed to create TEN VAD: {e}"))?;
             Ok(Box::new(vad))
         }
+        "firered-vad" => {
+            use wavekat_vad::backends::firered::FireRedVad;
+
+            let vad =
+                FireRedVad::new().map_err(|e| format!("failed to create FireRedVAD: {e}"))?;
+            Ok(Box::new(vad))
+        }
         other => Err(format!("unknown backend: {other}")),
     }
 }
@@ -241,7 +288,9 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
 
     backends.insert("silero-vad".to_string(), vec![threshold_param.clone()]);
 
-    backends.insert("ten-vad".to_string(), vec![threshold_param]);
+    backends.insert("ten-vad".to_string(), vec![threshold_param.clone()]);
+
+    backends.insert("firered-vad".to_string(), vec![threshold_param]);
 
     backends
 }

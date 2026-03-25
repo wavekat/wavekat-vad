@@ -4,7 +4,7 @@
 //! provides an adapter that buffers incoming audio and produces frames of the
 //! exact size required by each backend.
 
-use crate::{VadCapabilities, VadError, VoiceActivityDetector};
+use crate::{ProcessTimings, VadCapabilities, VadError, VoiceActivityDetector};
 
 /// Adapts audio frames to match a VAD backend's requirements.
 ///
@@ -111,6 +111,11 @@ impl FrameAdapter {
     /// Returns the number of samples currently buffered.
     pub fn buffered_samples(&self) -> usize {
         self.buffer.len()
+    }
+
+    /// Returns accumulated processing timings from the inner detector.
+    pub fn timings(&self) -> ProcessTimings {
+        self.inner.timings()
     }
 }
 

@@ -42,9 +42,10 @@
 
 use super::onnx;
 use crate::error::VadError;
-use crate::{VadCapabilities, VoiceActivityDetector};
+use crate::{ProcessTimings, VadCapabilities, VoiceActivityDetector};
 use ndarray::{Array1, Array2, Array3};
 use ort::{inputs, session::Session, value::Tensor};
+use std::time::{Duration, Instant};
 
 /// Embedded Silero VAD ONNX model (v5).
 /// Downloaded automatically at build time by build.rs.
@@ -73,6 +74,12 @@ pub struct SileroVad {
     state: Array3<f32>,
     /// Context buffer: last 64 samples from previous chunk.
     context: Vec<f32>,
+    /// Accumulated time for i16→f32 normalization + context building.
+    normalize_time: Duration,
+    /// Accumulated time for tensor creation + ONNX run + state update.
+    onnx_time: Duration,
+    /// Number of frames that produced a result.
+    timing_frames: u64,
 }
 
 // SAFETY: ort::Session is Send in ort 2.x, and all other fields are owned Send types.
@@ -134,6 +141,9 @@ impl SileroVad {
             chunk_size,
             state,
             context,
+            normalize_time: Duration::ZERO,
+            onnx_time: Duration::ZERO,
+            timing_frames: 0,
         })
     }
 
@@ -160,6 +170,9 @@ impl SileroVad {
             chunk_size,
             state,
             context,
+            normalize_time: Duration::ZERO,
+            onnx_time: Duration::ZERO,
+            timing_frames: 0,
         })
     }
 
@@ -202,6 +215,9 @@ impl VoiceActivityDetector for SileroVad {
             });
         }
 
+        // --- Preprocessing: normalize + build input ---
+        let t_preprocess = Instant::now();
+
         // Convert i16 samples to f32 and normalize to [-1.0, 1.0]
         let samples_f32: Vec<f32> = samples.iter().map(|&s| s as f32 / 32768.0).collect();
 
@@ -210,6 +226,11 @@ impl VoiceActivityDetector for SileroVad {
         let mut input_data = Vec::with_capacity(input_size);
         input_data.extend_from_slice(&self.context);
         input_data.extend_from_slice(&samples_f32);
+
+        self.normalize_time += t_preprocess.elapsed();
+
+        // --- Inference: tensor creation + ONNX run + state update ---
+        let t_inference = Instant::now();
 
         // Create input tensor: shape [1, context_size + chunk_size]
         let input_array = Array2::from_shape_vec((1, input_size), input_data)
@@ -273,6 +294,9 @@ impl VoiceActivityDetector for SileroVad {
         let start = samples_f32.len().saturating_sub(CONTEXT_SIZE);
         self.context.copy_from_slice(&samples_f32[start..]);
 
+        self.onnx_time += t_inference.elapsed();
+        self.timing_frames += 1;
+
         // Clamp probability to valid range
         Ok(probability.clamp(0.0, 1.0))
     }
@@ -283,6 +307,13 @@ impl VoiceActivityDetector for SileroVad {
 
         // Reset context buffer to zeros
         self.context.fill(0.0);
+    }
+
+    fn timings(&self) -> ProcessTimings {
+        ProcessTimings {
+            stages: vec![("normalize", self.normalize_time), ("onnx", self.onnx_time)],
+            frames: self.timing_frames,
+        }
     }
 }
 

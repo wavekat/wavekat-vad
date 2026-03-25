@@ -224,6 +224,13 @@ Apache-2.0
 
 The TEN-VAD ONNX model (used by the `ten-vad` feature) is licensed under Apache-2.0 with a non-compete clause by the TEN-framework / Agora. It restricts deployment that competes with Agora's offerings and limits deployment to "solely for your benefit and the benefit of your direct End Users." This is **not standard open-source** despite the Apache-2.0 label. Review the [TEN-VAD license](https://github.com/TEN-framework/ten-vad) before using in production.
 
-### Third-party notices
+### Acknowledgements
 
-This project uses [nnnoiseless](https://github.com/jneem/nnnoiseless) (BSD-3-Clause) for noise suppression via the `denoise` feature.
+This project wraps and builds on several upstream projects:
+
+- [webrtc-vad](https://github.com/kaegi/webrtc-vad) — Rust bindings for Google's WebRTC VAD
+- [Silero VAD](https://github.com/snakers4/silero-vad) — neural network VAD by the Silero team
+- [TEN-VAD](https://github.com/TEN-framework/ten-vad) — lightweight VAD by TEN-framework / Agora
+- [FireRedVAD](https://github.com/FireRedTeam/FireRedVAD) — DFSMN-based VAD by the FireRedTeam
+- [ort](https://github.com/pykeio/ort) — ONNX Runtime bindings for Rust
+- [nnnoiseless](https://github.com/jneem/nnnoiseless) — Rust port of RNNoise for noise suppression

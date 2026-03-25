@@ -84,6 +84,8 @@ pub enum ServerMessage {
         probability: f32,
         /// Inference time in microseconds for this frame.
         inference_us: f64,
+        /// Per-stage timing breakdown (e.g. fbank, cmvn, onnx).
+        stage_times: Vec<pipeline::StageTiming>,
         /// Frame duration in milliseconds (from backend capabilities).
         frame_duration_ms: u32,
     },
@@ -242,6 +244,7 @@ pub async fn handle_ws(socket: WebSocket) {
                                     timestamp_ms: result.timestamp_ms,
                                     probability: result.probability,
                                     inference_us: result.inference_us,
+                                    stage_times: result.stage_times.clone(),
                                     frame_duration_ms: result.frame_duration_ms,
                                 };
                                 if msg_tx_vad.send(vad_msg).await.is_err() {
@@ -426,6 +429,7 @@ pub async fn handle_ws(socket: WebSocket) {
                             timestamp_ms: result.timestamp_ms,
                             probability: result.probability,
                             inference_us: result.inference_us,
+                            stage_times: result.stage_times.clone(),
                             frame_duration_ms: result.frame_duration_ms,
                         };
                         if msg_tx_vad.send(vad_msg).await.is_err() {

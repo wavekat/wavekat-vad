@@ -20,7 +20,7 @@ export interface VadConfig {
 export interface ParamInfo {
   name: string;
   description: string;
-  param_type: { type: "Select"; options: string[] } | { type: "Float"; options: { min: number; max: number } } | { type: "Int"; options: { min: number; max: number } };
+  param_type: { type: "Select"; options: { value: string; label: string }[] } | { type: "Float"; options: { min: number; max: number } } | { type: "Int"; options: { min: number; max: number } };
   default: unknown;
 }
 
@@ -33,7 +33,7 @@ export type ServerMessage =
   | { type: "spectrum"; timestamp_ms: number; magnitudes: number[] }
   | { type: "preprocessed_audio"; config_id: string; timestamp_ms: number; samples: number[] }
   | { type: "preprocessed_spectrum"; config_id: string; timestamp_ms: number; magnitudes: number[] }
-  | { type: "vad"; config_id: string; timestamp_ms: number; probability: number; inference_us: number; frame_duration_ms: number }
+  | { type: "vad"; config_id: string; timestamp_ms: number; probability: number; inference_us: number; stage_times: Array<{ name: string; us: number }>; frame_duration_ms: number }
   | { type: "done" }
   | { type: "error"; message: string };
 

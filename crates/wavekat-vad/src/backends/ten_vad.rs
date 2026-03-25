@@ -58,11 +58,12 @@
 
 use super::onnx;
 use crate::error::VadError;
-use crate::{VadCapabilities, VoiceActivityDetector};
+use crate::{ProcessTimings, VadCapabilities, VoiceActivityDetector};
 use ndarray::{Array2, Array3};
 use ort::{inputs, session::Session, value::Tensor};
 use realfft::{RealFftPlanner, RealToComplex};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Embedded TEN-VAD ONNX model.
 const MODEL_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ten-vad.onnx"));
@@ -579,6 +580,12 @@ pub struct TenVad {
     preprocessor: TenVadPreprocessor,
     /// Hidden states: 4 tensors of shape [1, 64].
     hidden_states: [Array2<f32>; 4],
+    /// Accumulated time for feature extraction (pre-emphasis + STFT + mel + pitch).
+    preprocess_time: Duration,
+    /// Accumulated time for tensor creation + ONNX run + state update.
+    onnx_time: Duration,
+    /// Number of frames that produced a result.
+    timing_frames: u64,
 }
 
 // SAFETY: ort::Session is Send in ort 2.x, and all other fields are owned Send types.
@@ -649,6 +656,9 @@ impl TenVad {
             session,
             preprocessor: TenVadPreprocessor::new(),
             hidden_states,
+            preprocess_time: Duration::ZERO,
+            onnx_time: Duration::ZERO,
+            timing_frames: 0,
         })
     }
 }
@@ -676,8 +686,13 @@ impl VoiceActivityDetector for TenVad {
             });
         }
 
-        // Run preprocessing
+        // --- Preprocessing: feature extraction ---
+        let t_preprocess = Instant::now();
         let features = self.preprocessor.process(samples);
+        self.preprocess_time += t_preprocess.elapsed();
+
+        // --- Inference: tensor creation + ONNX run + state update ---
+        let t_inference = Instant::now();
 
         // Create feature tensor: shape [1, 3, 41]
         let feature_array =
@@ -744,6 +759,9 @@ impl VoiceActivityDetector for TenVad {
             }
         }
 
+        self.onnx_time += t_inference.elapsed();
+        self.timing_frames += 1;
+
         Ok(probability.clamp(0.0, 1.0))
     }
 
@@ -751,6 +769,16 @@ impl VoiceActivityDetector for TenVad {
         self.preprocessor.reset();
         for h in &mut self.hidden_states {
             h.fill(0.0);
+        }
+    }
+
+    fn timings(&self) -> ProcessTimings {
+        ProcessTimings {
+            stages: vec![
+                ("preprocess", self.preprocess_time),
+                ("onnx", self.onnx_time),
+            ],
+            frames: self.timing_frames,
         }
     }
 }

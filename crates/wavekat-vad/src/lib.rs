@@ -11,6 +11,7 @@
 //! | [WebRTC](`backends::webrtc`) | `webrtc` (default) | 8/16/32/48 kHz | 10, 20, or 30ms | Binary (0.0 or 1.0) |
 //! | [Silero](`backends::silero`) | `silero` | 8/16 kHz | 32ms | Continuous (0.0–1.0) |
 //! | [TEN-VAD](`backends::ten_vad`) | `ten-vad` | 16 kHz only | 16ms | Continuous (0.0–1.0) |
+//! | [FireRedVAD](`backends::firered`) | `firered` | 16 kHz only | 10ms | Continuous (0.0–1.0) |
 //!
 //! # Quick start
 //!
@@ -21,6 +22,7 @@
 //! wavekat-vad = "0.1"                                  # WebRTC only (default)
 //! wavekat-vad = { version = "0.1", features = ["silero"] }  # Silero
 //! wavekat-vad = { version = "0.1", features = ["ten-vad"] } # TEN-VAD
+//! wavekat-vad = { version = "0.1", features = ["firered"] } # FireRedVAD
 //! ```
 //!
 //! Then create a detector and process audio frames:
@@ -101,18 +103,20 @@
 //! | `webrtc` | Yes | WebRTC VAD backend |
 //! | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
 //! | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
+//! | `firered` | No | FireRedVAD backend (ONNX model + CMVN downloaded at build time) |
 //! | `denoise` | No | RNNoise-based noise suppression in [`preprocessing`] |
 //! | `serde` | No | `Serialize`/`Deserialize` for config types |
 //!
 //! ## ONNX model downloads
 //!
-//! The Silero and TEN-VAD backends download their ONNX models automatically
-//! at build time. For offline or CI builds, set environment variables to
-//! point to local model files:
+//! The Silero, TEN-VAD, and FireRedVAD backends download their ONNX models
+//! automatically at build time. For offline or CI builds, set environment
+//! variables to point to local model files:
 //!
 //! ```sh
 //! SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
 //! TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
+//! FIRERED_MODEL_PATH=/path/to/model.onnx FIRERED_CMVN_PATH=/path/to/cmvn.ark cargo build --features firered
 //! ```
 //!
 //! # Error handling
@@ -158,6 +162,39 @@ pub use adapter::FrameAdapter;
 
 pub use error::VadError;
 
+use std::time::Duration;
+
+/// Accumulated processing time breakdown by named pipeline stage.
+///
+/// Each backend defines its own stages (e.g. `"fbank"`, `"cmvn"`, `"onnx"`),
+/// so you can see exactly where time is spent without hardcoding a fixed set
+/// of fields. Stages are returned in pipeline order.
+///
+/// Call [`VoiceActivityDetector::timings()`] to retrieve the current values.
+/// Timings accumulate across all calls to [`process()`](VoiceActivityDetector::process)
+/// and are **not** reset by [`reset()`](VoiceActivityDetector::reset).
+///
+/// # Example
+///
+/// ```ignore
+/// let t = vad.timings();
+/// for (name, dur) in &t.stages {
+///     let avg_us = dur.as_secs_f64() * 1_000_000.0 / t.frames as f64;
+///     println!("{name}: {avg_us:.1} µs/frame");
+/// }
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct ProcessTimings {
+    /// Named timing stages in pipeline order.
+    ///
+    /// Each entry is `(stage_name, accumulated_duration)`. The stage names
+    /// are backend-specific — for example FireRedVAD reports `"fbank"`,
+    /// `"cmvn"`, and `"onnx"`, while Silero reports `"normalize"` and `"onnx"`.
+    pub stages: Vec<(&'static str, Duration)>,
+    /// Number of frames that produced a result (excludes buffering-only frames).
+    pub frames: u64,
+}
+
 /// Describes the audio requirements of a VAD backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VadCapabilities {
@@ -201,5 +238,15 @@ pub trait VoiceActivityDetector: Send {
     /// Reset the detector's internal state.
     ///
     /// Call this when starting a new audio stream or after a long pause.
+    /// Does **not** reset accumulated [`timings()`](Self::timings).
     fn reset(&mut self);
+
+    /// Return accumulated processing time breakdown.
+    ///
+    /// Timings accumulate across all calls to [`process()`](Self::process)
+    /// and persist through [`reset()`](Self::reset). Returns default
+    /// (zero) timings if the backend does not track them.
+    fn timings(&self) -> ProcessTimings {
+        ProcessTimings::default()
+    }
 }

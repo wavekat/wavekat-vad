@@ -17,6 +17,7 @@ webrtc = ["dep:webrtc-vad"]
 silero = ["dep:ort", "dep:ndarray", "dep:ureq"]
 denoise = ["dep:nnnoiseless"]
 ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
+firered = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
 serde = ["dep:serde"]
 
 [dependencies]
@@ -44,6 +45,10 @@ name = "detect_speech"
 [[example]]
 name = "ten_vad_file"
 required-features = ["ten-vad"]
+
+[[example]]
+name = "firered_file"
+required-features = ["firered"]
 
 [[bench]]
 name = "vad_comparison"

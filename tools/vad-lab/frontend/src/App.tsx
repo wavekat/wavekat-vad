@@ -92,7 +92,7 @@ function createDefaultConfigs(): VadConfig[] {
       id: "config-1",
       label: "WebRTC VAD",
       backend: "webrtc-vad",
-      params: { mode: "0 - quality" },
+      params: { mode: "very_aggressive" },
       preprocessing: {},
     },
     {
@@ -106,6 +106,13 @@ function createDefaultConfigs(): VadConfig[] {
       id: "config-3",
       label: "TEN VAD",
       backend: "ten-vad",
+      params: { threshold: 0.5 },
+      preprocessing: {},
+    },
+    {
+      id: "config-4",
+      label: "FireRed VAD",
+      backend: "firered-vad",
       params: { threshold: 0.5 },
       preprocessing: {},
     },
@@ -150,7 +157,7 @@ function App() {
   >({});
   // Cumulative inference timing per config for RTF computation
   const [vadTiming, setVadTiming] = useState<
-    Record<string, { totalInferenceUs: number; totalAudioMs: number }>
+    Record<string, { totalInferenceUs: number; totalAudioMs: number; stageTotals: Record<string, number>; frameDurationMs: number }>
   >({});
   const [totalDurationMs, setTotalDurationMs] = useState(0);
   const [sampleRate, setSampleRate] = useState<number | null>(null);
@@ -244,7 +251,7 @@ function App() {
           configsLoadedRef.current = true;
           setConfigs(createDefaultConfigs());
         } else {
-          // Backfill missing param defaults for saved configs (e.g. new params added)
+          // Backfill missing params and fix stale Select values in saved configs
           setConfigs((prev) =>
             prev.map((c) => {
               const backendParams = msg.backends[c.backend];
@@ -255,6 +262,13 @@ function App() {
                 if (!(p.name in params)) {
                   params[p.name] = p.default;
                   changed = true;
+                } else if (p.param_type.type === "Select") {
+                  // Reset to default if saved value doesn't match any valid option
+                  const valid = p.param_type.options.map((o) => o.value);
+                  if (!valid.includes(String(params[p.name]))) {
+                    params[p.name] = p.default;
+                    changed = true;
+                  }
                 }
               }
               return changed ? { ...c, params } : c;
@@ -298,12 +312,18 @@ function App() {
           ],
         }));
         setVadTiming((prev) => {
-          const existing = prev[msg.config_id] ?? { totalInferenceUs: 0, totalAudioMs: 0 };
+          const existing = prev[msg.config_id] ?? { totalInferenceUs: 0, totalAudioMs: 0, stageTotals: {}, frameDurationMs: 0 };
+          const stageTotals = { ...existing.stageTotals };
+          for (const st of msg.stage_times ?? []) {
+            stageTotals[st.name] = (stageTotals[st.name] ?? 0) + st.us;
+          }
           return {
             ...prev,
             [msg.config_id]: {
               totalInferenceUs: existing.totalInferenceUs + msg.inference_us,
               totalAudioMs: existing.totalAudioMs + msg.frame_duration_ms,
+              stageTotals,
+              frameDurationMs: msg.frame_duration_ms,
             },
           };
         });
@@ -734,6 +754,13 @@ function App() {
           const rtf = timing && timing.totalAudioMs > 0
             ? (timing.totalInferenceUs / 1000) / timing.totalAudioMs
             : null;
+          const numResults = (vadResults[config.id] ?? []).length;
+          const stageAvgs = timing && numResults > 0
+            ? Object.entries(timing.stageTotals).map(([name, totalUs]) => ({
+                name,
+                us: totalUs / numResults,
+              }))
+            : undefined;
           return (
           <VadTimeline
             key={config.id}
@@ -741,6 +768,8 @@ function App() {
             config={config}
             results={vadResults[config.id] ?? []}
             rtf={rtf}
+            stageAvgs={stageAvgs}
+            frameDurationMs={timing?.frameDurationMs}
             totalDurationMs={totalDurationMs}
             viewport={viewport}
             width={containerWidth}

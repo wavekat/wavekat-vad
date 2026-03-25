@@ -44,7 +44,8 @@
 
 use crate::error::VadError;
 use crate::frame::{frame_samples, validate_sample_rate};
-use crate::{VadCapabilities, VoiceActivityDetector};
+use crate::{ProcessTimings, VadCapabilities, VoiceActivityDetector};
+use std::time::{Duration, Instant};
 
 /// WebRTC VAD aggressiveness mode.
 ///
@@ -89,6 +90,8 @@ pub struct WebRtcVad {
     sample_rate: u32,
     mode: WebRtcVadMode,
     frame_duration_ms: u32,
+    inference_time: Duration,
+    timing_frames: u64,
 }
 
 // SAFETY: webrtc_vad::Vad wraps a C pointer that is only accessed via &mut self.
@@ -137,6 +140,8 @@ impl WebRtcVad {
             sample_rate,
             mode,
             frame_duration_ms,
+            inference_time: Duration::ZERO,
+            timing_frames: 0,
         })
     }
 }
@@ -169,10 +174,13 @@ impl VoiceActivityDetector for WebRtcVad {
             });
         }
 
+        let start = Instant::now();
         let is_voice = self
             .vad
             .is_voice_segment(samples)
             .map_err(|()| VadError::BackendError("webrtc-vad processing error".into()))?;
+        self.inference_time += start.elapsed();
+        self.timing_frames += 1;
 
         Ok(if is_voice { 1.0 } else { 0.0 })
     }
@@ -181,6 +189,13 @@ impl VoiceActivityDetector for WebRtcVad {
         let mut vad = webrtc_vad::Vad::new_with_rate(to_sample_rate(self.sample_rate));
         vad.set_mode(self.mode.into());
         self.vad = vad;
+    }
+
+    fn timings(&self) -> ProcessTimings {
+        ProcessTimings {
+            stages: vec![("inference", self.inference_time)],
+            frames: self.timing_frames,
+        }
     }
 }
 

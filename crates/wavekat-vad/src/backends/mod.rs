@@ -8,10 +8,11 @@
 //! | [`webrtc`] | `webrtc` (default) | Google's WebRTC VAD |
 //! | [`silero`] | `silero` | Silero VAD v5 (ONNX) |
 //! | [`ten_vad`] | `ten-vad` | Agora's TEN-VAD (ONNX) |
+//! | [`firered`] | `firered` | FireRedVAD (ONNX) |
 //!
 //! All backends implement the [`VoiceActivityDetector`](crate::VoiceActivityDetector) trait.
 
-#[cfg(any(feature = "silero", feature = "ten-vad"))]
+#[cfg(any(feature = "silero", feature = "ten-vad", feature = "firered"))]
 pub(crate) mod onnx;
 
 #[cfg(feature = "webrtc")]
@@ -22,3 +23,6 @@ pub mod silero;
 
 #[cfg(feature = "ten-vad")]
 pub mod ten_vad;
+
+#[cfg(feature = "firered")]
+pub mod firered;

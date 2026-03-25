@@ -35,6 +35,18 @@ fn main() {
                 fs::write(&model_path, b"").expect("failed to write placeholder model");
             }
         }
+        #[cfg(feature = "firered")]
+        {
+            let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
+            let model_path = Path::new(&out_dir).join("fireredvad_stream_vad_with_cache.onnx");
+            if !model_path.exists() {
+                fs::write(&model_path, b"").expect("failed to write placeholder model");
+            }
+            let cmvn_path = Path::new(&out_dir).join("firered_cmvn.ark");
+            if !cmvn_path.exists() {
+                fs::write(&cmvn_path, b"").expect("failed to write placeholder cmvn");
+            }
+        }
         return;
     }
 
@@ -43,6 +55,9 @@ fn main() {
 
     #[cfg(feature = "ten-vad")]
     setup_ten_vad_model();
+
+    #[cfg(feature = "firered")]
+    setup_firered_model();
 }
 
 #[cfg(feature = "silero")]
@@ -152,4 +167,86 @@ fn setup_ten_vad_model() {
         "cargo:warning=TEN-VAD model downloaded to {}",
         model_dest.display()
     );
+}
+
+#[cfg(feature = "firered")]
+fn setup_firered_model() {
+    println!("cargo:rerun-if-env-changed=FIRERED_MODEL_PATH");
+    println!("cargo:rerun-if-env-changed=FIRERED_CMVN_PATH");
+
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
+
+    // --- ONNX model ---
+    let model_dest = Path::new(&out_dir).join("fireredvad_stream_vad_with_cache.onnx");
+
+    if let Ok(local_path) = env::var("FIRERED_MODEL_PATH") {
+        let local_path = Path::new(&local_path);
+        if !local_path.exists() {
+            panic!(
+                "FIRERED_MODEL_PATH points to non-existent file: {}",
+                local_path.display()
+            );
+        }
+        println!(
+            "cargo:warning=Using local FireRedVAD model: {}",
+            local_path.display()
+        );
+        fs::copy(local_path, &model_dest).expect("failed to copy local model file");
+        println!("cargo:rerun-if-changed={}", local_path.display());
+    } else if !model_dest.exists() {
+        let model_url = "https://github.com/FireRedTeam/FireRedVAD/raw/main/pretrained_models/onnx_models/fireredvad_stream_vad_with_cache.onnx";
+        println!("cargo:warning=Downloading FireRedVAD model from {model_url}");
+
+        let response = ureq::get(model_url).call().unwrap_or_else(|e| {
+            panic!("failed to download FireRedVAD model from {model_url}: {e}")
+        });
+
+        let bytes = response
+            .into_body()
+            .read_to_vec()
+            .expect("failed to read FireRedVAD model bytes");
+
+        fs::write(&model_dest, &bytes).expect("failed to write FireRedVAD model file");
+        println!(
+            "cargo:warning=FireRedVAD model downloaded to {}",
+            model_dest.display()
+        );
+    }
+
+    // --- CMVN file ---
+    let cmvn_dest = Path::new(&out_dir).join("firered_cmvn.ark");
+
+    if let Ok(local_path) = env::var("FIRERED_CMVN_PATH") {
+        let local_path = Path::new(&local_path);
+        if !local_path.exists() {
+            panic!(
+                "FIRERED_CMVN_PATH points to non-existent file: {}",
+                local_path.display()
+            );
+        }
+        println!(
+            "cargo:warning=Using local FireRedVAD CMVN: {}",
+            local_path.display()
+        );
+        fs::copy(local_path, &cmvn_dest).expect("failed to copy local cmvn file");
+        println!("cargo:rerun-if-changed={}", local_path.display());
+    } else if !cmvn_dest.exists() {
+        let cmvn_url = "https://github.com/FireRedTeam/FireRedVAD/raw/main/pretrained_models/onnx_models/cmvn.ark";
+        println!("cargo:warning=Downloading FireRedVAD CMVN from {cmvn_url}");
+
+        let response = ureq::get(cmvn_url)
+            .call()
+            .unwrap_or_else(|e| panic!("failed to download FireRedVAD CMVN from {cmvn_url}: {e}"));
+
+        let bytes = response
+            .into_body()
+            .read_to_vec()
+            .expect("failed to read CMVN bytes");
+
+        fs::write(&cmvn_dest, &bytes).expect("failed to write CMVN file");
+        println!(
+            "cargo:warning=FireRedVAD CMVN downloaded to {}",
+            cmvn_dest.display()
+        );
+    }
 }

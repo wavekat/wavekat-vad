@@ -30,8 +30,14 @@ tools/vad-lab/frontend/dist/
 *.wav
 !testdata/**/*.wav
 
+# Python virtual environments
+.venv/
+
 # Environment
 .env
+
+# macOS
+.DS_Store
 
 # ONNX models (downloaded at build time)
 crates/wavekat-vad/models/

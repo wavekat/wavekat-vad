@@ -26,13 +26,15 @@ let probability = vad.process(&samples, 16000).unwrap();
 | WebRTC | `webrtc` (default) | 8/16/32/48 kHz | 10, 20, or 30ms | Binary (0.0 or 1.0) |
 | Silero | `silero` | 8/16 kHz | 32ms (256 or 512 samples) | Continuous (0.0–1.0) |
 | TEN-VAD | `ten-vad` | 16 kHz only | 16ms (256 samples) | Continuous (0.0–1.0) |
+| FireRedVAD | `firered` | 16 kHz only | 10ms (160 samples) | Continuous (0.0–1.0) |
 
 ```toml
 [dependencies]
 wavekat-vad = "0.1"                    # WebRTC only (default)
 wavekat-vad = { version = "0.1", features = ["silero"] }
 wavekat-vad = { version = "0.1", features = ["ten-vad"] }
-wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad"] }  # all backends
+wavekat-vad = { version = "0.1", features = ["firered"] }
+wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad", "firered"] }  # all backends
 ```
 
 ### Benchmarks
@@ -95,6 +97,19 @@ use wavekat_vad::backends::ten_vad::TenVad;
 
 let mut vad = TenVad::new().unwrap();
 let samples = vec![0i16; 256]; // 16ms at 16kHz
+let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
+```
+
+### FireRedVAD
+
+Xiaohongshu's FireRedVAD using a DFSMN architecture with pure Rust FBank preprocessing. Returns continuous probability, 16kHz only. Best overall F1 and AUC-ROC across benchmarks.
+
+```rust
+use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::firered::FireRedVad;
+
+let mut vad = FireRedVad::new().unwrap();
+let samples = vec![0i16; 160]; // 10ms at 16kHz
 let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
 ```
 
@@ -175,16 +190,18 @@ let cleaned = preprocessor.process(&raw_audio);
 | `webrtc` | Yes | WebRTC VAD backend |
 | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
 | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
+| `firered` | No | FireRedVAD backend (ONNX model downloaded at build time) |
 | `denoise` | No | RNNoise-based noise suppression in the preprocessing pipeline |
 | `serde` | No | `Serialize`/`Deserialize` for config types |
 
 ### ONNX Model Downloads
 
-Silero and TEN-VAD models are downloaded automatically at build time. For offline or CI builds, point to a local model file:
+Silero, TEN-VAD, and FireRedVAD models are downloaded automatically at build time. For offline or CI builds, point to a local model file:
 
 ```sh
 SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
 TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
+FIRERED_MODEL_PATH=/path/to/fireredvad.onnx FIRERED_CMVN_PATH=/path/to/cmvn.ark cargo build --features firered
 ```
 
 ## Error Handling
@@ -223,6 +240,13 @@ Apache-2.0
 
 The TEN-VAD ONNX model (used by the `ten-vad` feature) is licensed under Apache-2.0 with a non-compete clause by the TEN-framework / Agora. It restricts deployment that competes with Agora's offerings and limits deployment to "solely for your benefit and the benefit of your direct End Users." This is **not standard open-source** despite the Apache-2.0 label. Review the [TEN-VAD license](https://github.com/TEN-framework/ten-vad) before using in production.
 
-### Third-party notices
+### Acknowledgements
 
-This project uses [nnnoiseless](https://github.com/jneem/nnnoiseless) (BSD-3-Clause) for noise suppression via the `denoise` feature.
+This project wraps and builds on several upstream projects:
+
+- [webrtc-vad](https://github.com/kaegi/webrtc-vad) — Rust bindings for Google's WebRTC VAD
+- [Silero VAD](https://github.com/snakers4/silero-vad) — neural network VAD by the Silero team
+- [TEN-VAD](https://github.com/TEN-framework/ten-vad) — lightweight VAD by TEN-framework / Agora
+- [FireRedVAD](https://github.com/FireRedTeam/FireRedVAD) — DFSMN-based VAD by the FireRedTeam
+- [ort](https://github.com/pykeio/ort) — ONNX Runtime bindings for Rust
+- [nnnoiseless](https://github.com/jneem/nnnoiseless) — Rust port of RNNoise for noise suppression

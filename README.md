@@ -5,6 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/v/wavekat-vad.svg)](https://crates.io/crates/wavekat-vad)
 [![docs.rs](https://docs.rs/wavekat-vad/badge.svg)](https://docs.rs/wavekat-vad)
 [![CI](https://github.com/wavekat/wavekat-vad/actions/workflows/ci.yml/badge.svg)](https://github.com/wavekat/wavekat-vad/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/1184705840.svg)](https://doi.org/10.5281/zenodo.19216274)
 
 Voice Activity Detection library for Rust with multiple backend support.
 

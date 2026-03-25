@@ -198,12 +198,20 @@ let cleaned = preprocessor.process(&raw_audio);
 
 ### ONNX Model Downloads
 
-Silero, TEN-VAD, and FireRedVAD models are downloaded automatically at build time. For offline or CI builds, point to a local model file:
+Silero, TEN-VAD, and FireRedVAD models are downloaded automatically at build time. The Silero backend is pinned to **v6.2.1** by default.
+
+For offline or CI builds, point to a local model file:
 
 ```sh
 SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
 TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
 FIRERED_MODEL_PATH=/path/to/fireredvad.onnx FIRERED_CMVN_PATH=/path/to/cmvn.ark cargo build --features firered
+```
+
+To use a different Silero model version, override the download URL:
+
+```sh
+SILERO_MODEL_URL=https://github.com/snakers4/silero-vad/raw/v6.0/src/silero_vad/data/silero_vad.onnx cargo build --features silero
 ```
 
 ## Error Handling

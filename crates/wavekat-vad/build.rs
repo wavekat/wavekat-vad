@@ -63,8 +63,10 @@ fn main() {
 #[cfg(feature = "silero")]
 fn setup_silero_model() {
     const DEFAULT_MODEL_URL: &str =
-        "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
+        "https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx";
     const SILERO_MODEL_NAME: &str = "silero_vad.onnx";
+    // Bump this when updating the default model URL to invalidate cached downloads.
+    const SILERO_MODEL_VERSION: &str = "v6.2.1";
 
     // Re-run if these env vars change
     println!("cargo:rerun-if-env-changed=SILERO_MODEL_PATH");
@@ -72,6 +74,7 @@ fn setup_silero_model() {
 
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let model_path = Path::new(&out_dir).join(SILERO_MODEL_NAME);
+    let version_path = Path::new(&out_dir).join("silero_vad.version");
 
     // Option 1: Use local file if SILERO_MODEL_PATH is set
     if let Ok(local_path) = env::var("SILERO_MODEL_PATH") {
@@ -91,8 +94,9 @@ fn setup_silero_model() {
         return;
     }
 
-    // Skip download if already exists
-    if model_path.exists() {
+    // Skip download if model exists and version matches
+    let cached_version = fs::read_to_string(&version_path).unwrap_or_default();
+    if model_path.exists() && cached_version.trim() == SILERO_MODEL_VERSION {
         return;
     }
 
@@ -111,9 +115,10 @@ fn setup_silero_model() {
         .expect("failed to read model bytes");
 
     fs::write(&model_path, &bytes).expect("failed to write model file");
+    fs::write(&version_path, SILERO_MODEL_VERSION).expect("failed to write version marker");
 
     println!(
-        "cargo:warning=Silero VAD model downloaded to {}",
+        "cargo:warning=Silero VAD model ({SILERO_MODEL_VERSION}) downloaded to {}",
         model_path.display()
     );
 }

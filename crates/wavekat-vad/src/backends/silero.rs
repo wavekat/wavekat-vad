@@ -1,7 +1,7 @@
 //! Silero VAD backend using ONNX Runtime.
 //!
 //! This backend wraps the [Silero VAD](https://github.com/snakers4/silero-vad)
-//! v5 model, a pre-trained LSTM neural network for voice activity detection.
+//! v6 model, a pre-trained LSTM neural network for voice activity detection.
 //! It runs inference via ONNX Runtime (through the [`ort`](https://crates.io/crates/ort)
 //! crate) and returns continuous speech probability scores between 0.0 and 1.0.
 //!
@@ -24,7 +24,7 @@
 //!
 //! # Model Loading
 //!
-//! The default ONNX model (Silero VAD v5) is embedded in the binary at
+//! The default ONNX model (Silero VAD v6) is embedded in the binary at
 //! compile time — no external files are needed at runtime. For custom
 //! models, use [`SileroVad::from_file`] or [`SileroVad::from_memory`].
 //!
@@ -47,7 +47,7 @@ use ndarray::{Array1, Array2, Array3};
 use ort::{inputs, session::Session, value::Tensor};
 use std::time::{Duration, Instant};
 
-/// Embedded Silero VAD ONNX model (v5).
+/// Embedded Silero VAD ONNX model (v6).
 /// Downloaded automatically at build time by build.rs.
 const MODEL_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/silero_vad.onnx"));
 
@@ -57,7 +57,7 @@ const CONTEXT_SIZE: usize = 64;
 /// LSTM hidden state shape: [2, 1, 128] (h and c states).
 const STATE_DIM: usize = 128;
 
-/// Voice activity detector backed by the Silero VAD v5 ONNX model.
+/// Voice activity detector backed by the Silero VAD v6 ONNX model.
 ///
 /// Uses an LSTM neural network to produce continuous speech probability
 /// scores (0.0–1.0). Internal hidden state and a context buffer persist

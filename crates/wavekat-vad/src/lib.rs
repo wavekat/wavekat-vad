@@ -110,13 +110,22 @@
 //! ## ONNX model downloads
 //!
 //! The Silero, TEN-VAD, and FireRedVAD backends download their ONNX models
-//! automatically at build time. For offline or CI builds, set environment
-//! variables to point to local model files:
+//! automatically at build time. The Silero backend is pinned to **v6.2.1** by
+//! default.
+//!
+//! For offline or CI builds, set environment variables to point to local model
+//! files:
 //!
 //! ```sh
 //! SILERO_MODEL_PATH=/path/to/silero_vad.onnx cargo build --features silero
 //! TEN_VAD_MODEL_PATH=/path/to/ten-vad.onnx cargo build --features ten-vad
 //! FIRERED_MODEL_PATH=/path/to/model.onnx FIRERED_CMVN_PATH=/path/to/cmvn.ark cargo build --features firered
+//! ```
+//!
+//! To use a different Silero model version, override the download URL:
+//!
+//! ```sh
+//! SILERO_MODEL_URL=https://github.com/snakers4/silero-vad/raw/v6.0/src/silero_vad/data/silero_vad.onnx cargo build --features silero
 //! ```
 //!
 //! # Error handling

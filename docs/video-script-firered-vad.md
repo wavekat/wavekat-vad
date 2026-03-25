@@ -60,14 +60,39 @@ Adding FireRedVAD to your project is the same as any other backend. Add the feat
 wavekat-vad = { version = "0.1", features = ["firered"] }
 ```
 
-And use it:
+We have a ready-to-run example in the repo. Let me run it.
+
+*[Screen: terminal]*
+
+```sh
+cargo run --example firered_file --features firered -- testdata/speech/sample.wav
+```
+
+*[Show output scrolling — timestamps with probabilities and # bars]*
+
+That's the `firered_file` example. It opens a WAV file, resamples to 16 kHz if needed, and runs FireRedVAD frame by frame — printing the speech probability at each 10ms step. You can see the probability jump up during speech segments and drop back to near zero during silence.
+
+The example is about 70 lines of code. Here's the core of it:
 
 ```rust
-use wavekat_vad::VoiceActivityDetector;
 use wavekat_vad::backends::firered::FireRedVad;
+use wavekat_vad::VoiceActivityDetector;
 
 let mut vad = FireRedVad::new().unwrap();
-let probability = vad.process(&samples, 16000).unwrap();
+let caps = vad.capabilities();
+
+for frame in samples.chunks_exact(caps.frame_size) {
+    let prob = vad.process(frame, 16000).unwrap();
+    // ...
+}
+```
+
+Create the VAD, get the frame size from capabilities, chunk your audio, and call `process`. That's it.
+
+We also have a multi-backend example — `detect_speech` — where you can switch between all four backends with a `--backend` flag:
+
+```sh
+cargo run --example detect_speech --features firered -- --backend firered audio.wav
 ```
 
 The ONNX model downloads automatically at build time and gets embedded in your binary. No external files needed at runtime. If you're building in CI or offline, you can point to a local model file with an environment variable.

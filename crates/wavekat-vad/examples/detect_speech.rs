@@ -9,6 +9,9 @@
 //!
 //! # TEN-VAD:
 //! cargo run --example detect_speech --features ten-vad -- --backend ten-vad path/to/audio.wav
+//!
+//! # FireRedVAD:
+//! cargo run --example detect_speech --features firered -- --backend firered path/to/audio.wav
 //! ```
 
 use std::env;
@@ -33,6 +36,11 @@ fn create_vad(backend: &str) -> Box<dyn VoiceActivityDetector> {
             use wavekat_vad::backends::ten_vad::TenVad;
             Box::new(TenVad::new().expect("failed to create TEN-VAD"))
         }
+        #[cfg(feature = "firered")]
+        "firered" => {
+            use wavekat_vad::backends::firered::FireRedVad;
+            Box::new(FireRedVad::new().expect("failed to create FireRedVAD"))
+        }
         other => {
             eprintln!("Unknown or disabled backend: {other}");
             eprintln!("Available backends:");
@@ -42,6 +50,8 @@ fn create_vad(backend: &str) -> Box<dyn VoiceActivityDetector> {
             eprintln!("  silero");
             #[cfg(feature = "ten-vad")]
             eprintln!("  ten-vad");
+            #[cfg(feature = "firered")]
+            eprintln!("  firered");
             std::process::exit(1);
         }
     }
@@ -75,7 +85,7 @@ fn main() {
     }
 
     let wav_path = wav_path.unwrap_or_else(|| {
-        eprintln!("Usage: detect_speech [--backend webrtc|silero|ten-vad] <wav-file>");
+        eprintln!("Usage: detect_speech [--backend webrtc|silero|ten-vad|firered] <wav-file>");
         std::process::exit(1);
     });
 

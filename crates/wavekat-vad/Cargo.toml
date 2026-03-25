@@ -46,6 +46,10 @@ name = "detect_speech"
 name = "ten_vad_file"
 required-features = ["ten-vad"]
 
+[[example]]
+name = "firered_file"
+required-features = ["firered"]
+
 [[bench]]
 name = "vad_comparison"
 harness = false

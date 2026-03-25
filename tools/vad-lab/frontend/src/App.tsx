@@ -92,7 +92,7 @@ function createDefaultConfigs(): VadConfig[] {
       id: "config-1",
       label: "WebRTC VAD",
       backend: "webrtc-vad",
-      params: { mode: "0 - quality" },
+      params: { mode: "very_aggressive" },
       preprocessing: {},
     },
     {

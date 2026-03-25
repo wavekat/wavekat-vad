@@ -774,7 +774,10 @@ impl VoiceActivityDetector for TenVad {
 
     fn timings(&self) -> ProcessTimings {
         ProcessTimings {
-            stages: vec![("preprocess", self.preprocess_time), ("onnx", self.onnx_time)],
+            stages: vec![
+                ("preprocess", self.preprocess_time),
+                ("onnx", self.onnx_time),
+            ],
             frames: self.timing_frames,
         }
     }

@@ -518,8 +518,7 @@ mod tests {
             cmvn.normalize(&mut features);
 
             // Run inference (zero-copy tensor views)
-            let feat_tensor =
-                TensorRef::from_array_view(([1i64, 1, 80], &features[..])).unwrap();
+            let feat_tensor = TensorRef::from_array_view(([1i64, 1, 80], &features[..])).unwrap();
             let cache_tensor = TensorRef::from_array_view(caches.view()).unwrap();
 
             let outputs = session
@@ -610,8 +609,7 @@ mod tests {
             fbank.extract_frame_full(frame_arr, &mut features);
             cmvn.normalize(&mut features);
 
-            let feat_tensor =
-                TensorRef::from_array_view(([1i64, 1, 80], &features[..])).unwrap();
+            let feat_tensor = TensorRef::from_array_view(([1i64, 1, 80], &features[..])).unwrap();
             let cache_tensor = TensorRef::from_array_view(caches.view()).unwrap();
 
             let outputs = session

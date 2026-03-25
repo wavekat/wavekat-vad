@@ -224,8 +224,8 @@ export function ConfigPanel({
                         </SelectTrigger>
                         <SelectContent>
                           {param.param_type.options.map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>

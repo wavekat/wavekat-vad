@@ -191,7 +191,10 @@ impl FbankExtractor {
     /// [`extract_frame_full`](Self::extract_frame_full) for the first frame.
     pub fn extract_frame(&mut self, samples: &[f32], output: &mut [f32; N_MEL]) {
         debug_assert_eq!(samples.len(), FRAME_SHIFT);
-        debug_assert!(!self.first_frame, "must call extract_frame_full for the first frame");
+        debug_assert!(
+            !self.first_frame,
+            "must call extract_frame_full for the first frame"
+        );
         let overlap_len = FRAME_LENGTH - FRAME_SHIFT; // 240
 
         let mut frame = [0.0f32; FRAME_LENGTH];

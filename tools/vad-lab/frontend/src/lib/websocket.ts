@@ -20,7 +20,7 @@ export interface VadConfig {
 export interface ParamInfo {
   name: string;
   description: string;
-  param_type: { type: "Select"; options: string[] } | { type: "Float"; options: { min: number; max: number } } | { type: "Int"; options: { min: number; max: number } };
+  param_type: { type: "Select"; options: { value: string; label: string }[] } | { type: "Float"; options: { min: number; max: number } } | { type: "Int"; options: { min: number; max: number } };
   default: unknown;
 }
 

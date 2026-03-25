@@ -37,7 +37,11 @@ pub struct PipelineResult {
 }
 
 /// Compute per-frame stage timing deltas between two snapshots.
-fn stage_deltas(before: &ProcessTimings, after: &ProcessTimings, num_frames: usize) -> Vec<StageTiming> {
+fn stage_deltas(
+    before: &ProcessTimings,
+    after: &ProcessTimings,
+    num_frames: usize,
+) -> Vec<StageTiming> {
     if num_frames == 0 {
         return Vec::new();
     }
@@ -51,8 +55,7 @@ fn stage_deltas(before: &ProcessTimings, after: &ProcessTimings, num_frames: usi
                 .find(|(n, _)| n == name)
                 .map(|(_, d)| *d)
                 .unwrap_or(std::time::Duration::ZERO);
-            let delta_us =
-                (dur_after.as_secs_f64() - dur_before.as_secs_f64()) * 1_000_000.0;
+            let delta_us = (dur_after.as_secs_f64() - dur_before.as_secs_f64()) * 1_000_000.0;
             StageTiming {
                 name: name.to_string(),
                 us: delta_us / num_frames as f64,
@@ -217,14 +220,9 @@ fn create_detector(
                 .params
                 .get("mode")
                 .and_then(|v| v.as_str())
-                .unwrap_or("0 - quality");
+                .unwrap_or("quality");
 
-            // Strip "N - " prefix if present (e.g. "2 - aggressive" -> "aggressive")
-            let mode_key = mode_str
-                .split_once(" - ")
-                .map_or(mode_str, |(_, name)| name);
-
-            let mode = match mode_key {
+            let mode = match mode_str {
                 "quality" => WebRtcVadMode::Quality,
                 "low_bitrate" => WebRtcVadMode::LowBitrate,
                 "aggressive" => WebRtcVadMode::Aggressive,
@@ -252,8 +250,7 @@ fn create_detector(
         "firered-vad" => {
             use wavekat_vad::backends::firered::FireRedVad;
 
-            let vad =
-                FireRedVad::new().map_err(|e| format!("failed to create FireRedVAD: {e}"))?;
+            let vad = FireRedVad::new().map_err(|e| format!("failed to create FireRedVAD: {e}"))?;
             Ok(Box::new(vad))
         }
         other => Err(format!("unknown backend: {other}")),
@@ -270,12 +267,24 @@ pub fn available_backends() -> HashMap<String, Vec<ParamInfo>> {
             name: "mode".to_string(),
             description: "Aggressiveness mode".to_string(),
             param_type: ParamType::Select(vec![
-                "0 - quality".to_string(),
-                "1 - low_bitrate".to_string(),
-                "2 - aggressive".to_string(),
-                "3 - very_aggressive".to_string(),
+                SelectOption {
+                    value: "quality".into(),
+                    label: "0 - Quality".into(),
+                },
+                SelectOption {
+                    value: "low_bitrate".into(),
+                    label: "1 - Low Bitrate".into(),
+                },
+                SelectOption {
+                    value: "aggressive".into(),
+                    label: "2 - Aggressive".into(),
+                },
+                SelectOption {
+                    value: "very_aggressive".into(),
+                    label: "3 - Very Aggressive".into(),
+                },
             ]),
-            default: serde_json::json!("0 - quality"),
+            default: serde_json::json!("quality"),
         }],
     );
 
@@ -310,7 +319,16 @@ pub fn preprocessing_params() -> Vec<ParamInfo> {
         ParamInfo {
             name: "denoise".to_string(),
             description: "RNNoise noise suppression".to_string(),
-            param_type: ParamType::Select(vec!["off".to_string(), "on".to_string()]),
+            param_type: ParamType::Select(vec![
+                SelectOption {
+                    value: "off".into(),
+                    label: "Off".into(),
+                },
+                SelectOption {
+                    value: "on".into(),
+                    label: "On".into(),
+                },
+            ]),
             default: serde_json::json!("off"),
         },
         ParamInfo {
@@ -338,12 +356,19 @@ pub struct ParamInfo {
     pub default: serde_json::Value,
 }
 
+/// A select option with a machine value and a human-readable label.
+#[derive(Debug, Clone, Serialize)]
+pub struct SelectOption {
+    pub value: String,
+    pub label: String,
+}
+
 /// Type of a configurable parameter.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "options")]
 pub enum ParamType {
     /// Select from a list of options.
-    Select(Vec<String>),
+    Select(Vec<SelectOption>),
     /// Float value with min/max range.
     #[allow(dead_code)]
     Float { min: f64, max: f64 },

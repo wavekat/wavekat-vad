@@ -272,26 +272,29 @@ export function VadTimeline({
   }, [results, width, height, color, config, hoverTimeMs, playheadMs, totalDurationMs, effectiveViewport]);
 
   return (
-    <div className={className}>
+    <div className={`${className} mb-4`}>
       <div className="flex items-baseline gap-2 mb-1">
-        <span className="text-xs font-medium font-mono">{label}</span>
-        {config && (
-          <span className="text-xs text-muted-foreground font-mono">
-            {formatConfigSummary(config)}
-          </span>
-        )}
+        <div className="flex flex-col">
+          <span className="text-xs font-medium font-mono">{label}</span>
+          {config && (
+            <span className="text-xs text-muted-foreground font-mono">
+              {formatConfigSummary(config)}
+            </span>
+          )}
+        </div>
         {rtf != null && (
-          <span className="text-xs text-muted-foreground font-mono ml-auto">
-            RTF {rtf.toFixed(4)}
+          <div className="text-xs text-muted-foreground font-mono ml-auto flex flex-col items-end">
+            <span className="tabular-nums">RTF {rtf.toFixed(4)}</span>
             {stageAvgs && stageAvgs.length > 0 && (
-              <> ({stageAvgs.map((s) =>
+              <span className="opacity-70">({stageAvgs.map((s) =>
                 `${s.name}: ${s.us < 10 ? s.us.toFixed(1) : Math.round(s.us)}µs`
-              ).join(" → ")})</>
+              ).join(" → ")})</span>
             )}
-          </span>
+          </div>
         )}
       </div>
       <div
+        className="border rounded"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         style={{ width, height, cursor: "crosshair" }}

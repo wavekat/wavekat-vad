@@ -109,6 +109,13 @@ function createDefaultConfigs(): VadConfig[] {
       params: { threshold: 0.5 },
       preprocessing: {},
     },
+    {
+      id: "config-4",
+      label: "FireRed VAD",
+      backend: "firered-vad",
+      params: { threshold: 0.5 },
+      preprocessing: {},
+    },
   ];
 }
 

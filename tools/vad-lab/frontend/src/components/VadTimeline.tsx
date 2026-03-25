@@ -41,11 +41,7 @@ function formatConfigSummary(config: VadConfig): string {
   // Add key backend params
   for (const [key, value] of Object.entries(config.params)) {
     if (value != null && value !== "") {
-      // For mode params, just show the first part (e.g., "0 - quality" -> "mode:0")
-      const displayValue = typeof value === "string" && value.includes(" - ")
-        ? value.split(" - ")[0]
-        : String(value);
-      parts.push(`${key}:${displayValue}`);
+      parts.push(`${key}:${String(value)}`);
     }
   }
 

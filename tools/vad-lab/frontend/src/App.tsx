@@ -251,7 +251,7 @@ function App() {
           configsLoadedRef.current = true;
           setConfigs(createDefaultConfigs());
         } else {
-          // Backfill missing param defaults for saved configs (e.g. new params added)
+          // Backfill missing params and fix stale Select values in saved configs
           setConfigs((prev) =>
             prev.map((c) => {
               const backendParams = msg.backends[c.backend];
@@ -262,6 +262,13 @@ function App() {
                 if (!(p.name in params)) {
                   params[p.name] = p.default;
                   changed = true;
+                } else if (p.param_type.type === "Select") {
+                  // Reset to default if saved value doesn't match any valid option
+                  const valid = p.param_type.options.map((o) => o.value);
+                  if (!valid.includes(String(params[p.name]))) {
+                    params[p.name] = p.default;
+                    changed = true;
+                  }
                 }
               }
               return changed ? { ...c, params } : c;

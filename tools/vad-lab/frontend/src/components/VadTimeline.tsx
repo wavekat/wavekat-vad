@@ -1,4 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
+import { Info } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { type Viewport, pixelToTime, timeToPixel } from "@/lib/viewport";
 
 interface VadConfig {
@@ -20,6 +22,8 @@ interface VadTimelineProps {
   rtf?: number | null;
   /** Per-stage average timing breakdown in µs/frame. */
   stageAvgs?: Array<{ name: string; us: number }>;
+  /** Frame duration in milliseconds (from backend capabilities). */
+  frameDurationMs?: number;
   totalDurationMs: number;
   viewport: Viewport;
   width?: number;
@@ -62,6 +66,7 @@ export function VadTimeline({
   results,
   rtf,
   stageAvgs,
+  frameDurationMs,
   totalDurationMs,
   viewport,
   width = 800,
@@ -279,13 +284,48 @@ export function VadTimeline({
           )}
         </div>
         {rtf != null && (
-          <div className="text-xs text-muted-foreground font-mono ml-auto flex flex-col items-end">
-            <span className="tabular-nums">RTF {rtf.toFixed(4)}</span>
-            {stageAvgs && stageAvgs.length > 0 && (
-              <span className="opacity-70">({stageAvgs.map((s) =>
-                `${s.name}: ${s.us < 10 ? s.us.toFixed(1) : Math.round(s.us)}µs`
-              ).join(" → ")})</span>
-            )}
+          <div className="text-xs text-muted-foreground font-mono ml-auto flex items-baseline gap-1">
+            <div className="flex flex-col items-end">
+              <span className="tabular-nums">RTF {rtf.toFixed(4)}</span>
+              {stageAvgs && stageAvgs.length > 0 && (
+                <span className="opacity-70">({stageAvgs.map((s) =>
+                  `${s.name}: ${s.us < 10 ? s.us.toFixed(1) : Math.round(s.us)}µs`
+                ).join(" → ")})</span>
+              )}
+            </div>
+            {frameDurationMs != null && frameDurationMs > 0 && stageAvgs && stageAvgs.length > 0 && (() => {
+              const totalUs = stageAvgs.reduce((sum, s) => sum + s.us, 0);
+              const frameDurationUs = frameDurationMs * 1000;
+              return (
+                <Tooltip>
+                  <TooltipTrigger className="text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                    <Info className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipContent side="left" align="start" className="block max-w-none font-mono text-[11px] leading-relaxed py-2">
+                    <div className="whitespace-nowrap opacity-70 mb-1">RTF = processing time / audio duration</div>
+                    <table className="border-spacing-x-2 border-separate">
+                      <tbody>
+                        <tr>
+                          <td className="text-right opacity-70">frame</td>
+                          <td className="whitespace-nowrap">{frameDurationMs}ms ({frameDurationUs.toLocaleString()}µs)</td>
+                        </tr>
+                        {stageAvgs.map((s) => (
+                          <tr key={s.name}>
+                            <td className="text-right opacity-70">{s.name}</td>
+                            <td>{s.us < 10 ? s.us.toFixed(1) : Math.round(s.us)}µs</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td className="text-right font-semibold pt-0.5 border-t border-background/20">total</td>
+                          <td className="whitespace-nowrap pt-0.5 border-t border-background/20">{Math.round(totalUs)}µs / {frameDurationUs.toLocaleString()}µs ≈ <span className="font-semibold">{(totalUs / frameDurationUs).toFixed(4)}</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-1 opacity-70">Lower is better. RTF &lt; 1 = faster than real-time.</div>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })()}
           </div>
         )}
       </div>

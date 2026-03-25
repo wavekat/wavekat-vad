@@ -157,7 +157,7 @@ function App() {
   >({});
   // Cumulative inference timing per config for RTF computation
   const [vadTiming, setVadTiming] = useState<
-    Record<string, { totalInferenceUs: number; totalAudioMs: number; stageTotals: Record<string, number> }>
+    Record<string, { totalInferenceUs: number; totalAudioMs: number; stageTotals: Record<string, number>; frameDurationMs: number }>
   >({});
   const [totalDurationMs, setTotalDurationMs] = useState(0);
   const [sampleRate, setSampleRate] = useState<number | null>(null);
@@ -312,7 +312,7 @@ function App() {
           ],
         }));
         setVadTiming((prev) => {
-          const existing = prev[msg.config_id] ?? { totalInferenceUs: 0, totalAudioMs: 0, stageTotals: {} };
+          const existing = prev[msg.config_id] ?? { totalInferenceUs: 0, totalAudioMs: 0, stageTotals: {}, frameDurationMs: 0 };
           const stageTotals = { ...existing.stageTotals };
           for (const st of msg.stage_times ?? []) {
             stageTotals[st.name] = (stageTotals[st.name] ?? 0) + st.us;
@@ -323,6 +323,7 @@ function App() {
               totalInferenceUs: existing.totalInferenceUs + msg.inference_us,
               totalAudioMs: existing.totalAudioMs + msg.frame_duration_ms,
               stageTotals,
+              frameDurationMs: msg.frame_duration_ms,
             },
           };
         });
@@ -768,6 +769,7 @@ function App() {
             results={vadResults[config.id] ?? []}
             rtf={rtf}
             stageAvgs={stageAvgs}
+            frameDurationMs={timing?.frameDurationMs}
             totalDurationMs={totalDurationMs}
             viewport={viewport}
             width={containerWidth}

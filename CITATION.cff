@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: wavekat-vad
+abstract: Voice Activity Detection library for Rust with multiple backend support.
+type: software
+authors:
+  - given-names: Yishi
+    family-names: Guo
+    alias: Eason
+    email: eason@wavekat.com
+repository-code: https://github.com/wavekat/wavekat-vad
+license: Apache-2.0
+doi: 10.5281/zenodo.19216274

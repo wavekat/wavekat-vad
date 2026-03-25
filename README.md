@@ -26,13 +26,15 @@ let probability = vad.process(&samples, 16000).unwrap();
 | WebRTC | `webrtc` (default) | 8/16/32/48 kHz | 10, 20, or 30ms | Binary (0.0 or 1.0) |
 | Silero | `silero` | 8/16 kHz | 32ms (256 or 512 samples) | Continuous (0.0–1.0) |
 | TEN-VAD | `ten-vad` | 16 kHz only | 16ms (256 samples) | Continuous (0.0–1.0) |
+| FireRedVAD | `firered` | 16 kHz only | 10ms (160 samples) | Continuous (0.0–1.0) |
 
 ```toml
 [dependencies]
 wavekat-vad = "0.1"                    # WebRTC only (default)
 wavekat-vad = { version = "0.1", features = ["silero"] }
 wavekat-vad = { version = "0.1", features = ["ten-vad"] }
-wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad"] }  # all backends
+wavekat-vad = { version = "0.1", features = ["firered"] }
+wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad", "firered"] }  # all backends
 ```
 
 ### Benchmarks
@@ -95,6 +97,19 @@ use wavekat_vad::backends::ten_vad::TenVad;
 
 let mut vad = TenVad::new().unwrap();
 let samples = vec![0i16; 256]; // 16ms at 16kHz
+let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
+```
+
+### FireRedVAD
+
+Xiaohongshu's FireRedVAD using a DFSMN architecture with pure Rust FBank preprocessing. Returns continuous probability, 16kHz only. Best overall F1 and AUC-ROC across benchmarks.
+
+```rust
+use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::firered::FireRedVad;
+
+let mut vad = FireRedVad::new().unwrap();
+let samples = vec![0i16; 160]; // 10ms at 16kHz
 let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
 ```
 
@@ -175,6 +190,7 @@ let cleaned = preprocessor.process(&raw_audio);
 | `webrtc` | Yes | WebRTC VAD backend |
 | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
 | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
+| `firered` | No | FireRedVAD backend (ONNX model downloaded at build time) |
 | `denoise` | No | RNNoise-based noise suppression in the preprocessing pipeline |
 | `serde` | No | `Serialize`/`Deserialize` for config types |
 

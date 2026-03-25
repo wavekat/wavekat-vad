@@ -224,18 +224,18 @@ CMVN tests in `firered/cmvn.rs` (4 tests):
 - ✅ `normalize_applies_correctly` — formula verified
 - ✅ `parse_invalid_data` — empty/truncated data errors
 
-### Step 8: Update Documentation
+### Step 8: Update Documentation ✅
 
-- [ ] Update `lib.rs` doc table to include FireRedVAD
-- [ ] Update `backends/mod.rs` doc table to include FireRedVAD
-- [ ] Update `README.md` feature table
-- [ ] Update `lib.rs` feature flags table
-- [ ] Add `FIRERED_MODEL_PATH` / `FIRERED_CMVN_PATH` to env var docs in `lib.rs`
+- [x] Update `lib.rs` doc table to include FireRedVAD
+- [x] Update `backends/mod.rs` doc table to include FireRedVAD
+- [x] Update `README.md` feature table
+- [x] Update `lib.rs` feature flags table
+- [x] Add `FIRERED_MODEL_PATH` / `FIRERED_CMVN_PATH` to env var docs in `lib.rs`
 
-### Step 9: Wire into vad-lab
+### Step 9: Wire into vad-lab ✅
 
-- [ ] **File: `tools/vad-lab/backend/Cargo.toml`** — Add `firered` to the wavekat-vad features list
-- [ ] **File: `tools/vad-lab/backend/src/pipeline.rs`** — Add FireRedVAD to `create_detector()`, `backend_required_rate()`, `available_backends()`
+- [x] **File: `tools/vad-lab/backend/Cargo.toml`** — Add `firered` to the wavekat-vad features list
+- [x] **File: `tools/vad-lab/backend/src/pipeline.rs`** — Add FireRedVAD to `create_detector()`, `backend_required_rate()`, `available_backends()`
 
 ## File Summary
 

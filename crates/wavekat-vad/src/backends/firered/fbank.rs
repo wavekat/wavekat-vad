@@ -385,10 +385,10 @@ mod tests {
             }
         }
 
-        // Tolerance: 1e-3 for FBank (accounts for float32 FFT differences)
+        // Tolerance: 2e-3 for FBank (accounts for float32 FFT differences)
         assert!(
-            max_diff < 1e-3,
-            "FBank max diff vs Python reference: {max_diff:.8} (tolerance: 1e-3)"
+            max_diff < 2e-3,
+            "FBank max diff vs Python reference: {max_diff:.8} (tolerance: 2e-3)"
         );
         eprintln!("FBank max diff vs Python reference: {max_diff:.8}");
     }

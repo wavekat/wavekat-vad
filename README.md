@@ -242,6 +242,27 @@ make dev-backend   # Terminal 1
 make dev-frontend  # Terminal 2
 ```
 
+## Videos
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://www.youtube.com/watch?v=450O3w9c-e8">
+        <img src="https://img.youtube.com/vi/450O3w9c-e8/maxresdefault.jpg" alt="VAD Lab Demo" width="400">
+        <br>
+        VAD Lab: Real-time multi-backend comparison
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://www.youtube.com/watch?v=j2KkhpFRKaY">
+        <img src="https://img.youtube.com/vi/j2KkhpFRKaY/maxresdefault.jpg" alt="FireRed VAD Showdown" width="400">
+        <br>
+        Adding FireRedVAD as the 4th backend
+      </a>
+    </td>
+  </tr>
+</table>
+
 ## License
 
 Apache-2.0

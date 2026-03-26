@@ -75,7 +75,7 @@ let result = vad.process(&samples, 16000).unwrap(); // 0.0 or 1.0
 
 ### Silero
 
-Neural network (LSTM) via ONNX Runtime. Returns continuous probability, higher accuracy than WebRTC. Only supports 8kHz and 16kHz.
+Neural network (LSTM) via ONNX Runtime. Returns continuous probability, best overall F1 across benchmarks. Only supports 8kHz and 16kHz.
 
 ```rust
 use wavekat_vad::VoiceActivityDetector;
@@ -104,7 +104,7 @@ let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
 
 ### FireRedVAD
 
-Xiaohongshu's FireRedVAD using a DFSMN architecture with pure Rust FBank preprocessing. Returns continuous probability, 16kHz only. Best overall F1 and AUC-ROC across benchmarks.
+Xiaohongshu's FireRedVAD using a DFSMN architecture with pure Rust FBank preprocessing. Returns continuous probability, 16kHz only.
 
 ```rust
 use wavekat_vad::VoiceActivityDetector;

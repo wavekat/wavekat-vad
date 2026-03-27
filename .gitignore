@@ -23,9 +23,6 @@ target
 # Node
 node_modules/
 
-# Frontend build output
-tools/vad-lab/frontend/dist/
-
 # Audio files (except test data)
 *.wav
 !testdata/**/*.wav

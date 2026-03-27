@@ -47,7 +47,6 @@ fn main() {
                 fs::write(&cmvn_path, b"").expect("failed to write placeholder cmvn");
             }
         }
-        return;
     }
 
     #[cfg(feature = "silero")]

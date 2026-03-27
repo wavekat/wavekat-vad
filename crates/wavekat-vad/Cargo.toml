@@ -1,6 +1,6 @@
 [package]
 name = "wavekat-vad"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 description = "Unified voice activity detection with multiple backends"
 license = "Apache-2.0"

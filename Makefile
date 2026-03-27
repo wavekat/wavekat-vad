@@ -1,13 +1,8 @@
-.PHONY: help setup setup-backend setup-frontend dev dev-frontend dev-backend check test fmt lint doc ci bench accuracy accuracy-update-baseline
+.PHONY: help setup check test fmt lint doc ci bench accuracy accuracy-update-baseline
 
 help:
 	@echo "Available targets:"
-	@echo "  setup           Install all dependencies (run once after clone)"
-	@echo "  setup-backend   Install cargo-watch"
-	@echo "  setup-frontend  Install npm dependencies"
-	@echo "  dev-backend     Run vad-lab backend with auto-rebuild"
-	@echo "  dev-frontend    Run vad-lab frontend dev server"
-	@echo "  dev             Instructions for running both"
+	@echo "  setup           Install dependencies (run once after clone)"
 	@echo "  check           Check workspace compiles"
 	@echo "  test            Run all tests"
 	@echo "  fmt             Format code"
@@ -18,28 +13,9 @@ help:
 	@echo "  accuracy        Run accuracy test against TEN-VAD testset (downloads ~60 files)"
 	@echo "  accuracy-update-baseline  Update best-score baselines after improvements"
 
-# Install all dependencies
-setup: setup-backend setup-frontend
-
-# Install cargo-watch for auto-rebuild
-setup-backend:
+# Install dependencies
+setup:
 	cargo install cargo-watch
-
-# Install frontend npm dependencies
-setup-frontend:
-	cd tools/vad-lab/frontend && . "$$NVM_DIR/nvm.sh" && nvm use && npm install
-
-# Run vad-lab backend with auto-rebuild on file changes
-dev-backend:
-	cargo watch -x 'run -p vad-lab'
-
-# Run vad-lab frontend dev server (uses .nvmrc for Node version)
-dev-frontend:
-	cd tools/vad-lab/frontend && . "$$NVM_DIR/nvm.sh" && nvm use && npm run dev
-
-# Run both frontend and backend (requires two terminals — use dev-backend + dev-frontend)
-dev:
-	@echo "Run 'make dev-backend' and 'make dev-frontend' in separate terminals"
 
 # Check workspace compiles
 check:

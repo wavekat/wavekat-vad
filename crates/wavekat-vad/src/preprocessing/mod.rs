@@ -105,7 +105,7 @@ impl PreprocessorConfig {
 /// Audio preprocessor that applies configured processing stages.
 ///
 /// Each instance maintains its own filter state, so you should create
-/// one `Preprocessor` per audio stream (or per VAD config in vad-lab).
+/// one `Preprocessor` per audio stream (or per VAD config).
 ///
 /// # Processing Order
 ///

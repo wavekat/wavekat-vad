@@ -11,8 +11,6 @@ Voice Activity Detection library for Rust. This crate provides a unified interfa
 
 ## Repository Structure
 
-This is a Cargo workspace with two main pieces: the library crate (the product) and a dev tool for experimentation.
-
 ```
 wavekat-vad/
 ├── Cargo.toml                  # workspace root
@@ -27,28 +25,6 @@ wavekat-vad/
 │       │       ├── webrtc.rs   # webrtc-vad wrapper
 │       │       └── silero.rs   # silero-vad (ONNX) wrapper
 │       └── Cargo.toml
-├── tools/
-│   └── vad-lab/                # dev tool for experimentation
-│       ├── backend/            # Rust: axum + cpal + websocket
-│       │   ├── src/
-│       │   │   ├── main.rs
-│       │   │   ├── audio_source.rs  # mic capture (cpal) / file playback
-│       │   │   ├── pipeline.rs      # fan-out to N VAD configs
-│       │   │   ├── session.rs       # config & result persistence
-│       │   │   └── ws.rs            # WebSocket streaming
-│       │   ├── build.rs        # embed frontend dist/
-│       │   └── Cargo.toml
-│       └── frontend/           # React app
-│           ├── src/
-│           │   ├── components/
-│           │   │   ├── Waveform.tsx       # canvas waveform display
-│           │   │   ├── VadTimeline.tsx    # speech probability overlay
-│           │   │   ├── ConfigPanel.tsx    # VAD config editor
-│           │   │   └── SessionManager.tsx
-│           │   └── lib/
-│           │       ├── websocket.ts       # WS client
-│           │       └── audio.ts           # audio decoding helpers
-│           └── package.json
 ├── testdata/                   # audio samples for testing
 │   ├── speech/
 │   └── silence/
@@ -82,54 +58,6 @@ pub trait VoiceActivityDetector: Send {
 ### Phase 2: Additional Backends (optional)
 - [ ] **rnnoise** — RNN-based noise suppression with VAD
 - [ ] **custom threshold** — Simple energy-based detection for baseline
-
-## vad-lab — Experimentation Tool
-
-A web-based dev tool for live VAD experimentation. **Not a product — just a tool to help us understand VAD better.**
-
-### Two Modes
-
-1. **Live recording** — capture mic server-side via `cpal`, stream audio + VAD results to the browser in real-time
-2. **File replay** — load a WAV file, run VAD configs on it, display full timeline
-
-### Architecture
-
-- **Server (Rust)**: axum + WebSocket. Handles mic capture, audio processing, VAD pipeline. All audio stays server-side.
-- **Frontend (React)**: visualization only. Waveform display, VAD result overlays, config panel, session management.
-- **Single binary**: frontend assets embedded in the Rust binary via `rust-embed`. Run one command, opens browser.
-
-### Server-Side Audio Capture
-
-The server handles all audio recording (not the browser). Flow:
-1. Client requests device list
-2. Server returns available mic devices via `cpal`
-3. Client selects device and starts recording
-4. Server captures audio, feeds frames to VAD pipeline, streams results via WebSocket
-5. Client displays waveform + VAD results in real-time
-
-### WebSocket Protocol
-
-```
-Server → Client:
-  { type: "devices", devices: [{ id, name, sample_rates }] }
-  { type: "audio", timestamp, samples: [...] }
-  { type: "vad", timestamp, config_id, probability }
-  { type: "done" }
-
-Client → Server:
-  { type: "list_devices" }
-  { type: "start_recording", device_id, sample_rate }
-  { type: "stop_recording" }
-  { type: "load_file", path: "..." }
-  { type: "set_configs", configs: [...] }
-```
-
-### Multi-Config Pipeline
-
-- Each VAD config specifies: backend name, backend-specific params, human label
-- Audio frames are fanned out to N `VoiceActivityDetector` instances (one per config)
-- Each runs in its own task/thread
-- Results are streamed to the frontend and saved to session files
 
 ## Testing
 
@@ -173,16 +101,6 @@ ort = { version = "2", optional = true }
 criterion = "0.5"
 hound = "3.5"  # WAV file reading
 ```
-
-### vad-lab tool (`tools/vad-lab`)
-
-Heavier dependencies are fine here — it's a dev tool, not shipped to users:
-- `axum`, `tokio`, `tower-http` — web server
-- `cpal` — audio capture
-- `rust-embed` — embed frontend assets
-- `serde`, `serde_json` — serialization
-- `hound` — WAV file I/O
-- `clap` — CLI args
 
 ## Conventions
 

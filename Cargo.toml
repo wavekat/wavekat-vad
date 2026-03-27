@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/wavekat-vad", "tools/vad-lab/backend"]
+members = ["crates/wavekat-vad"]
 resolver = "2"
 
 [workspace.dependencies]

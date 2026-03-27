@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14](https://github.com/wavekat/wavekat-vad/compare/v0.1.13...v0.1.14) - 2026-03-27
+
+### Other
+
+- link banner to GitHub repo ([#50](https://github.com/wavekat/wavekat-vad/pull/50))
+- note vad-lab has moved to wavekat-lab ([#48](https://github.com/wavekat/wavekat-vad/pull/48))
+
 ## [0.1.13](https://github.com/wavekat/wavekat-vad/compare/v0.1.12...v0.1.13) - 2026-03-26
 
 ### Other

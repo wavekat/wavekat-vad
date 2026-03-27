@@ -226,7 +226,11 @@ Use `capabilities()` to check a backend's requirements before processing.
 
 ## vad-lab
 
-Dev tool for live VAD experimentation. Captures audio server-side and streams results to a web UI.
+> **vad-lab has moved to [wavekat/wavekat-lab](https://github.com/wavekat/wavekat-lab).**
+>
+> It is now a standalone repo so it can grow to cover other WaveKat libraries (turn detection, etc.) without being tied to this crate.
+
+vad-lab is a web-based dev tool for live VAD experimentation — run multiple backends side by side on mic input or WAV files and compare speech probability outputs in real time.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/wavekat/wavekat-vad/main/docs/images/vad-lab-screenshot.png" alt="vad-lab screenshot" width="700">
@@ -234,13 +238,7 @@ Dev tool for live VAD experimentation. Captures audio server-side and streams re
   <em>vad-lab web interface</em>
 </p>
 
-### Quick Start
-
-```sh
-make setup         # Install dependencies (once)
-make dev-backend   # Terminal 1
-make dev-frontend  # Terminal 2
-```
+See [wavekat/wavekat-lab](https://github.com/wavekat/wavekat-lab) for setup and usage.
 
 ## Videos
 

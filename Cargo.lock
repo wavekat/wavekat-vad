@@ -1639,7 +1639,7 @@ dependencies = [
 
 [[package]]
 name = "wavekat-vad"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "criterion",
  "hound",

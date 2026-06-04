@@ -9,7 +9,7 @@
 [![CI](https://github.com/wavekat/wavekat-vad/actions/workflows/ci.yml/badge.svg)](https://github.com/wavekat/wavekat-vad/actions/workflows/ci.yml)
 [![DOI](https://zenodo.org/badge/1184705840.svg)](https://doi.org/10.5281/zenodo.19216274)
 
-Voice Activity Detection library for Rust with multiple backend support.
+Voice Activity Detection library for Rust with multiple backend support. Part of [WaveKat](https://wavekat.com), an open-source toolkit for building real-time voice pipelines.
 
 ## Quick Start
 
@@ -240,6 +240,12 @@ See [wavekat/wavekat-lab](https://github.com/wavekat/wavekat-lab) for setup and 
 |---|---|
 | <a href="https://www.youtube.com/watch?v=j2KkhpFRKaY"><img src="https://img.youtube.com/vi/j2KkhpFRKaY/maxresdefault.jpg" alt="FireRed VAD Showdown" width="400"></a> | **[Adding FireRedVAD as the 4th backend](https://www.youtube.com/watch?v=j2KkhpFRKaY)** <br> Benchmarking Xiaohongshu's FireRedVAD against Silero, TEN VAD, and WebRTC across accuracy and latency. |
 | <a href="https://www.youtube.com/watch?v=450O3w9c-e8"><img src="https://img.youtube.com/vi/450O3w9c-e8/maxresdefault.jpg" alt="VAD Lab Demo" width="400"></a> | **[VAD Lab: Real-time multi-backend comparison](https://www.youtube.com/watch?v=450O3w9c-e8)** <br> Live demo of VAD Lab comparing WebRTC, Silero, and TEN VAD side by side with real-time waveform visualization. |
+
+## About WaveKat
+
+`wavekat-vad` is part of WaveKat, an open-source ecosystem of Rust crates for building real-time voice pipelines. It handles voice activity detection, alongside sibling crates for turn detection, speech-to-text, text-to-speech, and SIP/RTP transport.
+
+See [wavekat.com](https://wavekat.com) for the full project.
 
 ## Star History
 

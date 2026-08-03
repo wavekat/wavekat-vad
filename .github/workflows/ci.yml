@@ -48,14 +48,26 @@ jobs:
           - "silero"
           - "ten-vad"
           - "firered"
+          - "earshot"
           - "serde"
-          - "webrtc,silero,ten-vad,firered,serde"
+          - "webrtc,silero,ten-vad,firered,earshot,serde"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test -p wavekat-vad --no-default-features --features "${{ matrix.features }}"
+
+  earshot-isolation:
+    # The pure-Rust earshot backend exists so hosts that already link WebRTC
+    # can enable a VAD without pulling webrtc-vad's libfvad symbols in. Assert
+    # that guarantee against the real resolver output.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/check_earshot_isolation.sh
 
   accuracy:
     runs-on: ubuntu-latest

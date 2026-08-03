@@ -12,6 +12,7 @@
 //! | [Silero](`backends::silero`) | `silero` | 8/16 kHz | 32ms | Continuous (0.0–1.0) |
 //! | [TEN-VAD](`backends::ten_vad`) | `ten-vad` | 16 kHz only | 16ms | Continuous (0.0–1.0) |
 //! | [FireRedVAD](`backends::firered`) | `firered` | 16 kHz only | 10ms | Continuous (0.0–1.0) |
+//! | [Earshot](`backends::earshot`) | `earshot` | 16 kHz only | 16ms | Continuous (0.0–1.0) |
 //!
 //! # Quick start
 //!
@@ -23,6 +24,7 @@
 //! wavekat-vad = { version = "0.1", features = ["silero"] }  # Silero
 //! wavekat-vad = { version = "0.1", features = ["ten-vad"] } # TEN-VAD
 //! wavekat-vad = { version = "0.1", features = ["firered"] } # FireRedVAD
+//! wavekat-vad = { version = "0.1", features = ["earshot"] } # Earshot (pure Rust)
 //! ```
 //!
 //! Then create a detector and process audio frames:
@@ -104,8 +106,27 @@
 //! | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
 //! | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
 //! | `firered` | No | FireRedVAD backend (ONNX model + CMVN downloaded at build time) |
+//! | `earshot` | No | Earshot backend — pure Rust, no ONNX runtime, no native code |
 //! | `denoise` | No | RNNoise-based noise suppression in [`preprocessing`] |
 //! | `serde` | No | `Serialize`/`Deserialize` for config types |
+//!
+//! ## Builds with no native dependencies
+//!
+//! The `earshot` backend is the only one that links **no** native code: no
+//! ONNX Runtime, no bundled C, and no build-time model download. Enable it
+//! alone if your host already links native audio libraries:
+//!
+//! ```sh
+//! cargo build -p wavekat-vad --no-default-features --features earshot
+//! ```
+//!
+//! This matters for hosts that also link WebRTC. The default `webrtc` backend
+//! bundles `libfvad`, which exports unmangled `WebRtcSpl_*` symbols from
+//! object files whose names collide with those in LiveKit's `webrtc-sys`;
+//! strict linkers reject the duplicate definitions and the host binary will
+//! not link at all. `scripts/check_earshot_isolation.sh` and
+//! `tests/feature_isolation.rs` assert that an `earshot`-only build stays free
+//! of `webrtc-vad`, `ort`, and `ureq`.
 //!
 //! ## ONNX model downloads
 //!

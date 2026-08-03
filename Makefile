@@ -1,4 +1,4 @@
-.PHONY: help setup check test fmt lint doc ci bench accuracy accuracy-update-baseline
+.PHONY: help setup check test fmt lint doc ci bench accuracy accuracy-update-baseline earshot-isolation
 
 help:
 	@echo "Available targets:"
@@ -9,6 +9,7 @@ help:
 	@echo "  lint            Run clippy with warnings as errors"
 	@echo "  doc             Build and open docs in browser"
 	@echo "  ci              Run all CI checks locally (fmt, clippy, test, doc, features)"
+	@echo "  earshot-isolation  Assert the earshot-only build pulls no webrtc-vad/ONNX deps"
 	@echo "  bench           Run criterion benchmarks (inference timing)"
 	@echo "  accuracy        Run accuracy test against TEN-VAD testset (downloads ~60 files)"
 	@echo "  accuracy-update-baseline  Update best-score baselines after improvements"
@@ -48,8 +49,10 @@ ci:
 	cargo test -p wavekat-vad --no-default-features --features "silero"
 	cargo test -p wavekat-vad --no-default-features --features "ten-vad"
 	cargo test -p wavekat-vad --no-default-features --features "firered"
+	cargo test -p wavekat-vad --no-default-features --features "earshot"
 	cargo test -p wavekat-vad --no-default-features --features "serde"
-	cargo test -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered,serde"
+	cargo test -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered,earshot,serde"
+	./scripts/check_earshot_isolation.sh
 
 # Run criterion benchmarks for per-frame inference timing
 bench:
@@ -64,3 +67,7 @@ accuracy:
 accuracy-update-baseline:
 	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered" \
 		-- --ignored accuracy_update_baseline --nocapture
+
+# Assert the earshot-only feature set has no webrtc-vad / ONNX / downloader deps
+earshot-isolation:
+	./scripts/check_earshot_isolation.sh

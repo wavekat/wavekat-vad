@@ -1,6 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 fn vad_benchmarks(c: &mut Criterion) {
+    // Every `group.bench_function` call below is feature-gated, so with no
+    // backend features enabled this binding is never mutated.
+    #[allow(unused_mut)]
     let mut group = c.benchmark_group("vad_process");
 
     // Benchmark each backend's per-frame inference time.
@@ -58,6 +61,19 @@ fn vad_benchmarks(c: &mut Criterion) {
         let samples = vec![0i16; vad.capabilities().frame_size];
 
         group.bench_function("fireredvad", |b| {
+            b.iter(|| vad.process(criterion::black_box(&samples), 16000).unwrap())
+        });
+    }
+
+    #[cfg(feature = "earshot")]
+    {
+        use wavekat_vad::backends::earshot::EarshotVad;
+        use wavekat_vad::VoiceActivityDetector;
+
+        let mut vad = EarshotVad::new();
+        let samples = vec![0i16; vad.capabilities().frame_size];
+
+        group.bench_function("earshot", |b| {
             b.iter(|| vad.process(criterion::black_box(&samples), 16000).unwrap())
         });
     }

@@ -9,6 +9,7 @@
 //! | [`silero`] | `silero` | Silero VAD v5 (ONNX) |
 //! | [`ten_vad`] | `ten-vad` | Agora's TEN-VAD (ONNX) |
 //! | [`firered`] | `firered` | FireRedVAD (ONNX) |
+//! | [`earshot`] | `earshot` | Earshot (pure Rust, no native deps) |
 //!
 //! All backends implement the [`VoiceActivityDetector`](crate::VoiceActivityDetector) trait.
 
@@ -26,3 +27,6 @@ pub mod ten_vad;
 
 #[cfg(feature = "firered")]
 pub mod firered;
+
+#[cfg(feature = "earshot")]
+pub mod earshot;

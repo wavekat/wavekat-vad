@@ -18,6 +18,7 @@ silero = ["dep:ort", "dep:ndarray", "dep:ureq"]
 denoise = ["dep:nnnoiseless"]
 ten-vad = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
 firered = ["dep:ort", "dep:ndarray", "dep:realfft", "dep:ureq"]
+earshot = ["dep:earshot"]
 serde = ["dep:serde"]
 
 [dependencies]
@@ -29,6 +30,7 @@ ndarray = { version = "0.17", optional = true }
 nnnoiseless = { version = "0.5", optional = true }
 rubato = "0.16"
 realfft = { version = "3", optional = true }
+earshot = { version = "1.2.1", optional = true }
 
 [build-dependencies]
 ureq = { version = "3", optional = true }

@@ -321,7 +321,7 @@ mod tests {
         // Should produce some output (exact amount depends on resampler buffering)
         // Due to multiple buffering stages, first call may not produce full output
         assert!(
-            output.len() > 0 || denoiser.buffered_samples() > 0,
+            !output.is_empty() || denoiser.buffered_samples() > 0,
             "Should either produce output or buffer samples"
         );
     }

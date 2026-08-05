@@ -390,7 +390,7 @@ mod tests {
         let prob = vad.process(&silence, 16000).unwrap(); // 480 samples, first frame produced
 
         assert!(
-            prob >= 0.0 && prob <= 1.0,
+            (0.0..=1.0).contains(&prob),
             "Probability out of range: {prob}"
         );
     }
@@ -445,7 +445,7 @@ mod tests {
             let result = vad.process(&silence, 16000);
             assert!(result.is_ok());
             let prob = result.unwrap();
-            assert!(prob >= 0.0 && prob <= 1.0);
+            assert!((0.0..=1.0).contains(&prob));
         }
     }
 
@@ -504,7 +504,7 @@ mod tests {
 
         let mut max_diff: f64 = 0.0;
 
-        for frame_idx in 0..num_frames {
+        for (frame_idx, &ref_prob) in ref_probs.iter().enumerate().take(num_frames) {
             let start = frame_idx * 160;
             let end = start + 400;
             let frame_samples: Vec<f32> = samples[start..end].iter().map(|&s| s as f32).collect();
@@ -536,7 +536,7 @@ mod tests {
             let (_, cache_data): (_, &[f32]) = new_caches.try_extract_tensor().unwrap();
             caches.as_slice_mut().unwrap().copy_from_slice(cache_data);
 
-            let diff = (probability as f64 - ref_probs[frame_idx]).abs();
+            let diff = (probability as f64 - ref_prob).abs();
             if diff > max_diff {
                 max_diff = diff;
             }
@@ -544,8 +544,7 @@ mod tests {
             // Print first few for debugging
             if frame_idx < 5 {
                 eprintln!(
-                    "  frame {frame_idx}: rust={probability:.6}, python={:.6}, diff={diff:.8}",
-                    ref_probs[frame_idx]
+                    "  frame {frame_idx}: rust={probability:.6}, python={ref_prob:.6}, diff={diff:.8}"
                 );
             }
         }
@@ -599,7 +598,7 @@ mod tests {
 
         let mut max_diff: f64 = 0.0;
 
-        for frame_idx in 0..num_frames {
+        for (frame_idx, &upstream_prob) in upstream_probs.iter().enumerate().take(num_frames) {
             let start = frame_idx * 160;
             let end = start + 400;
             let frame_samples: Vec<f32> = samples[start..end].iter().map(|&s| s as f32).collect();
@@ -627,15 +626,14 @@ mod tests {
             let (_, cache_data): (_, &[f32]) = new_caches.try_extract_tensor().unwrap();
             caches.as_slice_mut().unwrap().copy_from_slice(cache_data);
 
-            let diff = (probability as f64 - upstream_probs[frame_idx]).abs();
+            let diff = (probability as f64 - upstream_prob).abs();
             if diff > max_diff {
                 max_diff = diff;
             }
 
             if frame_idx < 5 {
                 eprintln!(
-                    "  frame {frame_idx}: rust={probability:.6}, upstream={:.6}, diff={diff:.8}",
-                    upstream_probs[frame_idx]
+                    "  frame {frame_idx}: rust={probability:.6}, upstream={upstream_prob:.6}, diff={diff:.8}"
                 );
             }
         }

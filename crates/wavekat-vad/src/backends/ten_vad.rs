@@ -814,7 +814,7 @@ mod tests {
         );
         let prob = result.unwrap();
         assert!(
-            prob >= 0.0 && prob <= 1.0,
+            (0.0..=1.0).contains(&prob),
             "Probability out of range: {prob}"
         );
     }
@@ -848,7 +848,7 @@ mod tests {
         let samples: Vec<i16> = (0..256).map(|i| (i % 100) as i16 * 50).collect();
         let result = vad.process(&samples, 16000).unwrap();
         assert!(
-            result >= 0.0 && result <= 1.0,
+            (0.0..=1.0).contains(&result),
             "Probability out of range: {result}"
         );
     }
@@ -880,7 +880,7 @@ mod tests {
             let result = vad.process(&silence, 16000);
             assert!(result.is_ok());
             let prob = result.unwrap();
-            assert!(prob >= 0.0 && prob <= 1.0);
+            assert!((0.0..=1.0).contains(&prob));
         }
     }
 
@@ -953,7 +953,7 @@ mod tests {
         let mut vad = result.unwrap();
         let silence = vec![0i16; 256];
         let prob = vad.process(&silence, 16000).unwrap();
-        assert!(prob >= 0.0 && prob <= 1.0);
+        assert!((0.0..=1.0).contains(&prob));
 
         // Cleanup
         let _ = std::fs::remove_file(&model_path);

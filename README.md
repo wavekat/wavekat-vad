@@ -30,6 +30,7 @@ let probability = vad.process(&samples, 16000).unwrap();
 | Silero | `silero` | 8/16 kHz | 32ms (256 or 512 samples) | Continuous (0.0–1.0) |
 | TEN-VAD | `ten-vad` | 16 kHz only | 16ms (256 samples) | Continuous (0.0–1.0) |
 | FireRedVAD | `firered` | 16 kHz only | 10ms (160 samples) | Continuous (0.0–1.0) |
+| Earshot | `earshot` | 16 kHz only | 16ms (256 samples) | Continuous (0.0–1.0) |
 
 ```toml
 [dependencies]
@@ -37,7 +38,9 @@ wavekat-vad = "0.1"                    # WebRTC only (default)
 wavekat-vad = { version = "0.1", features = ["silero"] }
 wavekat-vad = { version = "0.1", features = ["ten-vad"] }
 wavekat-vad = { version = "0.1", features = ["firered"] }
-wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad", "firered"] }  # all backends
+wavekat-vad = { version = "0.1", features = ["earshot"] }   # pure Rust, no native deps
+wavekat-vad = { version = "0.1", default-features = false, features = ["earshot"] }  # earshot only
+wavekat-vad = { version = "0.1", features = ["webrtc", "silero", "ten-vad", "firered", "earshot"] }  # all backends
 ```
 
 ### Benchmarks
@@ -195,8 +198,21 @@ let cleaned = preprocessor.process(&raw_audio);
 | `silero` | No | Silero VAD backend (ONNX model downloaded at build time) |
 | `ten-vad` | No | TEN-VAD backend (ONNX model downloaded at build time) |
 | `firered` | No | FireRedVAD backend (ONNX model downloaded at build time) |
+| `earshot` | No | Earshot backend — pure Rust, no ONNX runtime, no native code |
 | `denoise` | No | RNNoise-based noise suppression in the preprocessing pipeline |
 | `serde` | No | `Serialize`/`Deserialize` for config types |
+
+### Builds With No Native Dependencies
+
+`earshot` is the only backend that links no native code: no ONNX Runtime, no bundled C, and no build-time model download.
+
+```sh
+cargo build -p wavekat-vad --no-default-features --features earshot
+```
+
+This matters for hosts that already link WebRTC. The default `webrtc` backend bundles `libfvad`, which exports unmangled `WebRtcSpl_*` symbols from object files whose names collide with those in LiveKit's `webrtc-sys`; strict linkers reject the duplicate definitions and the host binary will not link at all.
+
+`scripts/check_earshot_isolation.sh` (run in CI) asserts that an `earshot`-only build stays free of `webrtc-vad`, `ort`, `ort-sys`, and `ureq`.
 
 ### ONNX Model Downloads
 

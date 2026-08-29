@@ -367,7 +367,7 @@ mod tests {
 
         let mut max_diff: f64 = 0.0;
 
-        for frame_idx in 0..num_frames {
+        for (frame_idx, ref_frame) in ref_fbank.iter().enumerate().take(num_frames) {
             let start = frame_idx * FRAME_SHIFT;
             let end = start + FRAME_LENGTH;
             let frame_samples: Vec<f32> = samples[start..end].iter().map(|&s| s as f32).collect();
@@ -378,7 +378,7 @@ mod tests {
 
             // Compare with Python reference
             for bin in 0..N_MEL {
-                let diff = (output[bin] as f64 - ref_fbank[frame_idx][bin]).abs();
+                let diff = (output[bin] as f64 - ref_frame[bin]).abs();
                 if diff > max_diff {
                     max_diff = diff;
                 }

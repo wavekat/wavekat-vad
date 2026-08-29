@@ -427,6 +427,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "earshot"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86b09710f15e995d175f80aa9101f37cd2bc12bb45593e7eac1809ab99acd1ab"
+
+[[package]]
 name = "easyfft"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1642,6 +1648,7 @@ name = "wavekat-vad"
 version = "0.1.16"
 dependencies = [
  "criterion",
+ "earshot",
  "hound",
  "ndarray",
  "nnnoiseless",

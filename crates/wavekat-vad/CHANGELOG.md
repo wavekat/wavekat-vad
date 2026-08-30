@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - add pure-Rust earshot VAD backend ([#55](https://github.com/wavekat/wavekat-vad/pull/55))
+- add `FrameAdapter::process_each`, an allocation-free way to score every complete frame in a chunk ([#55](https://github.com/wavekat/wavekat-vad/pull/55))
+
+### Fixed
+
+- `FrameAdapter::process` now feeds every complete frame in the chunk to the backend instead of one per call ([#55](https://github.com/wavekat/wavekat-vad/pull/55)).
+  Previously the remaining frames stayed in the carry buffer, so a caller passing more than one frame per call accumulated a backlog that grew for as long as the stream ran — at 20 ms packets into a 16 ms frame, 64 samples per call.
+  **Behaviour change:** callers passing exactly one frame per call, or sub-frame chunks, are unaffected and see identical scores. Callers passing multiple frames per call will see `process` return the first frame's score for that call rather than the oldest buffered frame's, and frames now reach the backend without the growing delay. `process_all` and `process_latest` return the same values as before.
 
 ### Other
 

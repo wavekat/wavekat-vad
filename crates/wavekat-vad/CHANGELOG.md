@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17](https://github.com/wavekat/wavekat-vad/compare/v0.1.16...v0.1.17) - 2026-08-30
+
+### Added
+
+- add pure-Rust earshot VAD backend ([#55](https://github.com/wavekat/wavekat-vad/pull/55))
+
+### Other
+
+- add earshot section to the README ([#59](https://github.com/wavekat/wavekat-vad/pull/59))
+- add conformance suite and semver check ([#60](https://github.com/wavekat/wavekat-vad/pull/60))
+- cover earshot backend and frame adapter ([#57](https://github.com/wavekat/wavekat-vad/pull/57))
+
 ## [0.1.16](https://github.com/wavekat/wavekat-vad/compare/v0.1.15...v0.1.16) - 2026-06-04
 
 ### Other

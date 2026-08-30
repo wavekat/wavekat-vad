@@ -120,6 +120,23 @@ let samples = vec![0i16; 160]; // 10ms at 16kHz
 let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
 ```
 
+### Earshot
+
+[pyke's Earshot](https://github.com/pykeio/earshot) — a streaming neural VAD written in pure Rust. No ONNX Runtime, no bundled C, and no model download at build time. Returns continuous probability, 16 kHz only.
+
+```rust
+use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::earshot::EarshotVad;
+
+let mut vad = EarshotVad::new(); // infallible — there is no model to load
+let samples = vec![0i16; 256]; // 16ms at 16kHz
+let probability = vad.process(&samples, 16000).unwrap(); // 0.0–1.0
+```
+
+Unlike the ONNX backends, construction cannot fail. The frame size is exactly 256 samples — nothing else is accepted — so pair it with [`FrameAdapter`](#frameadapter) if your transport delivers 20 ms / 320-sample packets. Each detector carries about 8 KiB of streaming state, so create one per stream and call `reset()` when a new stream starts.
+
+See [Builds With No Native Dependencies](#builds-with-no-native-dependencies) for why this backend exists.
+
 ## The `VoiceActivityDetector` Trait
 
 All backends implement a common trait, so you can write code that is generic over backends:
@@ -144,7 +161,7 @@ fn detect_speech(vad: &mut dyn VoiceActivityDetector, audio: &[i16], sample_rate
 
 ## `FrameAdapter`
 
-Real-world audio arrives in arbitrary chunk sizes. `FrameAdapter` buffers incoming samples and feeds correctly-sized frames to the backend automatically.
+Real-world audio arrives in arbitrary chunk sizes. `FrameAdapter` buffers incoming samples and feeds correctly-sized frames to the backend automatically. Every complete frame reaches the backend, in order — which matters because the neural backends are stateful.
 
 ```rust
 use wavekat_vad::FrameAdapter;
@@ -156,7 +173,16 @@ let mut adapter = FrameAdapter::new(Box::new(vad));
 // Feed arbitrary-sized chunks — adapter handles buffering
 let chunk = vec![0i16; 1000]; // not a multiple of 512
 
-// Get all complete frame results at once
+// Score every complete frame via a callback (allocates nothing)
+adapter
+    .process_each(&chunk, 16000, |probability| {
+        if probability > 0.5 {
+            println!("Speech detected!");
+        }
+    })
+    .unwrap();
+
+// Get all complete frame results at once (allocates one Vec)
 let probabilities = adapter.process_all(&chunk, 16000).unwrap();
 
 // Or get just the latest result (convenient for real-time)
@@ -165,6 +191,8 @@ let latest = adapter.process_latest(&chunk, 16000).unwrap();
 // Or process one frame at a time
 let result = adapter.process(&chunk, 16000).unwrap(); // Some(prob) or None
 ```
+
+`process_each` is the core the others are built on. On a real-time path prefer it or `process_latest`: both run without touching the allocator, while `process_all` allocates a `Vec` per call. `adapter.buffered_samples()` reports the trailing partial frame, which is always shorter than one frame.
 
 ## Preprocessing
 
@@ -288,5 +316,6 @@ This project wraps and builds on several upstream projects:
 - [Silero VAD](https://github.com/snakers4/silero-vad) — neural network VAD by the Silero team
 - [TEN-VAD](https://github.com/TEN-framework/ten-vad) — lightweight VAD by TEN-framework / Agora
 - [FireRedVAD](https://github.com/FireRedTeam/FireRedVAD) — DFSMN-based VAD by the FireRedTeam
+- [Earshot](https://github.com/pykeio/earshot) — pure Rust streaming VAD by pyke
 - [ort](https://github.com/pykeio/ort) — ONNX Runtime bindings for Rust
 - [nnnoiseless](https://github.com/jneem/nnnoiseless) — Rust port of RNNoise for noise suppression

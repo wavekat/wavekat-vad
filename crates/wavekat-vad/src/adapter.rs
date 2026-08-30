@@ -263,10 +263,15 @@ impl FrameAdapter {
 mod tests {
     use super::*;
 
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     /// Every sample the inner detector saw, concatenated in call order.
     type Seen = Arc<Mutex<Vec<i16>>>;
+
+    /// Number of times the inner detector's `reset()` was called.
+    type Resets = Arc<AtomicUsize>;
 
     // Mock VAD for testing
     struct MockVad {
@@ -277,6 +282,8 @@ mod tests {
         seen: Seen,
         /// If set, `process` fails once `call_count` reaches this value.
         fail_at_call: Option<usize>,
+        /// Counts calls to `reset()`, observable after the mock is boxed.
+        resets: Resets,
     }
 
     impl MockVad {
@@ -287,6 +294,7 @@ mod tests {
                 call_count: 0,
                 seen: Seen::default(),
                 fail_at_call: None,
+                resets: Resets::default(),
             }
         }
 
@@ -297,6 +305,10 @@ mod tests {
 
         fn seen_handle(&self) -> Seen {
             Arc::clone(&self.seen)
+        }
+
+        fn resets_handle(&self) -> Resets {
+            Arc::clone(&self.resets)
         }
     }
 
@@ -324,6 +336,14 @@ mod tests {
 
         fn reset(&mut self) {
             self.call_count = 0;
+            self.resets.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn timings(&self) -> ProcessTimings {
+            ProcessTimings {
+                stages: vec![("mock", Duration::from_micros(self.call_count as u64))],
+                frames: self.call_count as u64,
+            }
         }
     }
 
@@ -748,5 +768,159 @@ mod tests {
         // starting cleanly at sample 0 again.
         assert_eq!(&seen[..256], &ramp(300)[..256]);
         assert_eq!(&seen[256..], &audio[..]);
+    }
+
+    // ------------------------------------------------------------------
+    // Delegation to the wrapped detector
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn reset_forwards_to_the_inner_detector() {
+        // The carry buffer is only half of the adapter's state. A stateful
+        // backend that never sees `reset()` would keep scoring the new stream
+        // with the previous stream's recurrent context.
+        let mock = MockVad::new(16000, 256);
+        let resets = mock.resets_handle();
+        let mut adapter = FrameAdapter::new(Box::new(mock));
+
+        assert_eq!(resets.load(Ordering::SeqCst), 0);
+        adapter.reset();
+        assert_eq!(resets.load(Ordering::SeqCst), 1, "inner reset() not called");
+
+        adapter.process_each(&ramp(300), 16000, |_| {}).unwrap();
+        adapter.reset();
+        assert_eq!(resets.load(Ordering::SeqCst), 2);
+        assert_eq!(adapter.buffered_samples(), 0);
+    }
+
+    #[test]
+    fn timings_come_from_the_inner_detector() {
+        // MockVad reports one frame (and one microsecond) per scored frame.
+        let mut adapter = FrameAdapter::new(Box::new(MockVad::new(16000, 256)));
+        assert_eq!(adapter.timings().frames, 0);
+
+        adapter.process_each(&ramp(256 * 3), 16000, |_| {}).unwrap();
+        let t = adapter.timings();
+        assert_eq!(t.frames, 3, "adapter must report the inner frame count");
+        assert_eq!(t.stages.len(), 1);
+        assert_eq!(t.stages[0].0, "mock");
+        assert_eq!(t.stages[0].1, Duration::from_micros(3));
+
+        // Buffering-only calls score no frames, so the count must not move.
+        adapter.process_each(&ramp(100), 16000, |_| {}).unwrap();
+        assert_eq!(adapter.timings().frames, 3);
+    }
+
+    #[test]
+    fn accessors_mirror_the_inner_detectors_capabilities() {
+        let adapter = FrameAdapter::new(Box::new(MockVad::new(8000, 160)));
+        assert_eq!(adapter.sample_rate(), 8000);
+        assert_eq!(adapter.frame_size(), 160);
+        assert_eq!(
+            adapter.capabilities(),
+            &VadCapabilities {
+                sample_rate: 8000,
+                frame_size: 160,
+                frame_duration_ms: 20,
+            }
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Degenerate frame size
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn zero_frame_size_is_rejected_by_every_api() {
+        // A detector asking for zero-length frames cannot be framed for: the
+        // framing loop would never make progress. Every entry point must
+        // reject it rather than spin, and none may consume input.
+        let mock = MockVad::new(16000, 0);
+        let seen = mock.seen_handle();
+        let mut adapter = FrameAdapter::new(Box::new(mock));
+        let audio = ramp(1024);
+
+        let expect_rejected = |result: Result<(), VadError>| match result {
+            Err(VadError::InvalidFrameSize { got, expected }) => {
+                assert_eq!(got, 1024);
+                assert_eq!(expected, 0);
+            }
+            other => panic!("expected InvalidFrameSize, got {other:?}"),
+        };
+
+        expect_rejected(adapter.process(&audio, 16000).map(|_| ()));
+        expect_rejected(adapter.process_all(&audio, 16000).map(|_| ()));
+        expect_rejected(adapter.process_latest(&audio, 16000).map(|_| ()));
+        expect_rejected(adapter.process_each(&audio, 16000, |_| {}));
+
+        assert_eq!(adapter.buffered_samples(), 0);
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "input must not be consumed"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Error path: what the caller is told before the failure propagates
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn errors_still_report_the_frames_scored_before_the_failure() {
+        // Documented contract: on a mid-slice failure the frames already
+        // scored have been reported through `on_score`. A caller that has
+        // committed to those scores must not lose them when a later frame
+        // fails.
+        let mock = MockVad::new(16000, 256).failing_at(3);
+        let mut adapter = FrameAdapter::new(Box::new(mock));
+
+        let mut scores = Vec::new();
+        let err = adapter
+            .process_each(&ramp(256 * 6), 16000, |s| scores.push(s))
+            .expect_err("detector should have failed on the 4th frame");
+        assert!(matches!(err, VadError::BackendError(_)), "{err:?}");
+        assert_eq!(scores.len(), 3, "frames scored before the failure are lost");
+
+        // The failed frame and everything after it in that call are dropped,
+        // so the adapter is empty and ready for the next call rather than
+        // holding a stale partial frame.
+        assert_eq!(adapter.buffered_samples(), 0);
+    }
+
+    #[test]
+    fn process_all_upholds_the_invariant_when_the_detector_errors() {
+        // `process_all` cannot return both scores and an error, so it returns
+        // the error. The carry invariant still has to hold afterwards.
+        let mock = MockVad::new(16000, 256).failing_at(1);
+        let mut adapter = FrameAdapter::new(Box::new(mock));
+        assert!(adapter.process_all(&ramp(256 * 4), 16000).is_err());
+        assert!(adapter.buffered_samples() < 256);
+    }
+
+    // ------------------------------------------------------------------
+    // Framing under arbitrary chunk boundaries
+    // ------------------------------------------------------------------
+
+    /// Deterministic LCG, so a failure reproduces exactly.
+    fn lcg(state: &mut u64) -> u64 {
+        *state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *state >> 33
+    }
+
+    #[test]
+    fn randomised_chunk_boundaries_preserve_exact_framing() {
+        // Real transports do not deliver tidy chunk sizes: a jittery network
+        // splits packets anywhere. Sweep pseudo-random chunkings so the
+        // framing contract is verified beyond the handful of sizes spelled
+        // out above.
+        for frame_size in [1usize, 3, 160, 256, 512] {
+            for seed in 0..8u64 {
+                let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                let chunk_sizes: Vec<usize> =
+                    (0..40).map(|_| (lcg(&mut state) % 700) as usize).collect();
+                assert_exact_framing(frame_size, &chunk_sizes);
+            }
+        }
     }
 }

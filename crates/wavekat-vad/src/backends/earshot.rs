@@ -353,4 +353,124 @@ mod tests {
         }
         assert_eq!(scored, (320 * 20) / FRAME_SIZE);
     }
+
+    /// Mean score over a whole signal, scored by a fresh detector.
+    fn mean_score(audio: &[i16]) -> f32 {
+        let mut vad = EarshotVad::new();
+        let scores: Vec<f32> = audio
+            .chunks_exact(FRAME_SIZE)
+            .map(|f| vad.process(f, SAMPLE_RATE).unwrap())
+            .collect();
+        scores.iter().sum::<f32>() / scores.len() as f32
+    }
+
+    #[test]
+    fn a_signal_scores_clearly_above_digital_silence() {
+        // Range and finiteness checks pass for a backend that returns a
+        // constant. This one does not: the model has to respond to the audio
+        // it is given, and separate voiced content from silence by a wide
+        // margin at the 0.5 threshold the upstream crate suggests.
+        let signal = mean_score(&tone(0, FRAME_SIZE * 40));
+        let silence = mean_score(&[0i16; FRAME_SIZE * 40]);
+
+        assert!(
+            signal > silence + 0.2,
+            "signal {signal:.3} is not separated from silence {silence:.3}"
+        );
+        assert!(
+            silence < 0.5,
+            "digital silence scored {silence:.3}, at or above the suggested threshold"
+        );
+    }
+
+    #[test]
+    fn silence_never_crosses_the_suggested_threshold() {
+        let mut vad = EarshotVad::new();
+        for i in 0..200 {
+            let score = vad.process(&[0i16; FRAME_SIZE], SAMPLE_RATE).unwrap();
+            assert!(score < 0.5, "silent frame {i} scored {score:.3}");
+        }
+    }
+
+    #[test]
+    fn rejected_frames_leave_the_stream_state_untouched() {
+        // A rejected frame must not advance the recurrent state, or the
+        // stream silently desynchronises from the audio after any caller
+        // mistake. Same audio, same scores, whether or not invalid calls are
+        // interleaved.
+        let audio = tone(0, FRAME_SIZE * 20);
+
+        let mut clean = EarshotVad::new();
+        let expected: Vec<f32> = audio
+            .chunks_exact(FRAME_SIZE)
+            .map(|f| clean.process(f, SAMPLE_RATE).unwrap())
+            .collect();
+
+        let mut interleaved = EarshotVad::new();
+        let mut got = Vec::new();
+        for frame in audio.chunks_exact(FRAME_SIZE) {
+            // Wrong rate, wrong length, and both at once — all rejected.
+            assert!(interleaved.process(frame, 8_000).is_err());
+            assert!(interleaved.process(&frame[..100], SAMPLE_RATE).is_err());
+            assert!(interleaved.process(&[0i16; 512], 44_100).is_err());
+            got.push(interleaved.process(frame, SAMPLE_RATE).unwrap());
+        }
+
+        assert_eq!(got, expected, "a rejected frame perturbed the stream");
+    }
+
+    #[test]
+    fn default_matches_new() {
+        let audio = tone(0, FRAME_SIZE * 12);
+        let run = |mut vad: EarshotVad| -> Vec<f32> {
+            audio
+                .chunks_exact(FRAME_SIZE)
+                .map(|f| vad.process(f, SAMPLE_RATE).unwrap())
+                .collect()
+        };
+        assert_eq!(run(EarshotVad::default()), run(EarshotVad::new()));
+    }
+
+    #[test]
+    fn two_fresh_detectors_score_identically() {
+        // No global state, no RNG, no time dependence: the same audio through
+        // two independently constructed detectors is bit-for-bit identical.
+        let audio = tone(1_234, FRAME_SIZE * 20);
+        let run = || -> Vec<f32> {
+            let mut vad = EarshotVad::new();
+            audio
+                .chunks_exact(FRAME_SIZE)
+                .map(|f| vad.process(f, SAMPLE_RATE).unwrap())
+                .collect()
+        };
+        assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn context_carries_across_frame_boundaries() {
+        // Earshot keeps an overlapping analysis window and recurrent feature
+        // context, so a continuous stream must not score the same as the same
+        // frames scored in isolation. If these matched, the per-stream state
+        // would not be reaching the model — and frame ordering would stop
+        // mattering, which is the assumption the FrameAdapter is built on.
+        let audio = tone(0, FRAME_SIZE * 16);
+
+        let mut streaming = EarshotVad::new();
+        let continuous: Vec<f32> = audio
+            .chunks_exact(FRAME_SIZE)
+            .map(|f| streaming.process(f, SAMPLE_RATE).unwrap())
+            .collect();
+
+        let isolated: Vec<f32> = audio
+            .chunks_exact(FRAME_SIZE)
+            .map(|f| EarshotVad::new().process(f, SAMPLE_RATE).unwrap())
+            .collect();
+
+        assert_ne!(
+            continuous, isolated,
+            "per-stream context is not affecting the scores"
+        );
+        // The first frame has no history either way, so it must agree.
+        assert_eq!(continuous[0], isolated[0]);
+    }
 }

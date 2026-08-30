@@ -56,16 +56,16 @@ ci:
 
 # Run criterion benchmarks for per-frame inference timing
 bench:
-	cargo bench -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered"
+	cargo bench -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered,earshot"
 
 # Run accuracy test against the TEN-VAD testset (30 labeled audio files)
 accuracy:
-	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered" \
+	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered,earshot" \
 		-- --ignored accuracy_report --nocapture
 
 # Update accuracy-baseline.json with current best scores (only raises, never lowers)
 accuracy-update-baseline:
-	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered" \
+	cargo test --release -p wavekat-vad --no-default-features --features "webrtc,silero,ten-vad,firered,earshot" \
 		-- --ignored accuracy_update_baseline --nocapture
 
 # Assert the earshot-only feature set has no webrtc-vad / ONNX / downloader deps

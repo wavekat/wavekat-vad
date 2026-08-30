@@ -18,5 +18,10 @@
     "precision": 0.95,
     "recall": 0.879,
     "f1": 0.913
+  },
+  "earshot": {
+    "precision": 0.909,
+    "recall": 0.949,
+    "f1": 0.928
   }
 }

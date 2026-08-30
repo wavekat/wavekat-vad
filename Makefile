@@ -1,4 +1,4 @@
-.PHONY: help setup check test fmt lint doc ci bench accuracy accuracy-update-baseline earshot-isolation
+.PHONY: help setup check test fmt lint doc ci bench accuracy accuracy-update-baseline earshot-isolation semver
 
 help:
 	@echo "Available targets:"
@@ -10,6 +10,7 @@ help:
 	@echo "  doc             Build and open docs in browser"
 	@echo "  ci              Run all CI checks locally (fmt, clippy, test, doc, features)"
 	@echo "  earshot-isolation  Assert the earshot-only build pulls no webrtc-vad/ONNX deps"
+	@echo "  semver          Check the public API against the published release"
 	@echo "  bench           Run criterion benchmarks (inference timing)"
 	@echo "  accuracy        Run accuracy test against TEN-VAD testset (downloads ~60 files)"
 	@echo "  accuracy-update-baseline  Update best-score baselines after improvements"
@@ -71,3 +72,7 @@ accuracy-update-baseline:
 # Assert the earshot-only feature set has no webrtc-vad / ONNX / downloader deps
 earshot-isolation:
 	./scripts/check_earshot_isolation.sh
+
+# Compare the public API against the published release (needs cargo-semver-checks)
+semver:
+	cargo semver-checks check-release -p wavekat-vad --all-features
